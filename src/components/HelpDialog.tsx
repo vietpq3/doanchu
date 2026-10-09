@@ -40,7 +40,7 @@ export default function HelpDialog({ open, onClose }: { open: boolean; onClose: 
           <li>Các âm tiết cách nhau bằng dấu cách. Máy tự đặt dấu theo kiểu cũ (hòa, khỏe, thúy), nên gõ &quot;hoà&quot; hay &quot;hòa&quot; đều được.</li>
           <li>Bấm <b>Đoán</b> hoặc <kbd>Enter</kbd> để gửi.</li>
           <li className="hint-feature">Nút <b>Hint</b> gợi ý một ô chữ chưa được tô xanh lá: chữ đúng của ô đó hiện mờ trong hàng đang gõ. Mỗi ván được gợi ý <b>3 lần</b>, không mất lượt đoán.</li>
-          <li>Số <b>#N</b> ở góc trên bên trái là số thứ tự của từ khóa. Bấm vào đó, nhập một số khác để chơi đúng từ khóa số đó; bấm <b>New game</b> để chơi từ khóa ngẫu nhiên.</li>
+          <li>Số <b>#N</b> ở góc trên bên trái là số thứ tự của từ khóa. Bấm vào đó, nhập một số khác để chơi đúng từ khóa số đó; bấm <b>New game</b> để chơi từ khóa ngẫu nhiên. Cũng có thể mở link có đuôi <b>?id=300</b> để vào thẳng từ khóa số 300.</li>
           <li>Bảng chữ cái bên dưới tô màu theo kết quả tốt nhất của từng chữ (bỏ qua dấu thanh: chữ ô gồm ô, ố, ồ…).</li>
         </ul>
         <p className="source-note">Dữ liệu từ điển: <a href="https://dict.minhqnd.com">minhqnd/dictionary</a> v2.0.0 (CC BY-SA 4.0).</p>

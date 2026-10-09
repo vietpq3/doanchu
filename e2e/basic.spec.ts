@@ -179,6 +179,51 @@ test('số thứ tự từ khóa (#N) ở góc trên bên trái; bấm vào đ�
   await expect(game.input).toBeFocused();
 });
 
+test('/?id=N bắt đầu ván mới với từ khóa số N, về "/" và nhớ ván ngay cả khi tải lại trước lượt đoán đầu', async ({ game, page }) => {
+  await page.goto('/?id=7');
+  await expect(game.meta).toBeVisible();
+  expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe('/'); // đã về "/", không còn ?id=
+  await expect(game.keywordButton).toHaveText('#7');
+  await expect(game.meta).toContainText('Lượt 1/6');
+  const structure = await game.structure();
+
+  // tải lại NGAY (chưa đoán lượt nào): cookie đã được ghi lúc chuyển hướng nên vẫn là ván này, không thành ván ngẫu nhiên
+  await page.reload();
+  await expect(game.keywordButton).toHaveText('#7');
+
+  // đoán một lượt rồi tải lại: tiến độ còn nguyên (không bị tạo lại ván mới vì URL không còn ?id=)
+  await game.guessScored(structure.map((n) => 'b'.repeat(n)).join(' '), 0);
+  await page.reload();
+  await expect(game.keywordButton).toHaveText('#7');
+  await expect(game.meta).toContainText('Lượt 2/6');
+  await expect(page.locator('.row .cell[data-status]')).toHaveCount(structure.reduce((a, b) => a + b, 0));
+
+  // mở link khác khi đang chơi dở: bỏ ván hiện tại, vào từ khóa số 8
+  await page.goto('/?id=8');
+  await expect(game.keywordButton).toHaveText('#8');
+  await expect(game.meta).toContainText('Lượt 1/6');
+  await expect(page.locator('.row .cell[data-status]')).toHaveCount(0);
+
+  // cùng số thì cùng từ khóa (cùng cấu trúc ô chữ)
+  await page.goto('/?id=7');
+  await expect(game.keywordButton).toHaveText('#7');
+  expect(await game.structure()).toEqual(structure);
+});
+
+test('/?id= không hợp lệ hoặc ngoài khoảng: bỏ qua, vào ván bình thường', async ({ game, page }) => {
+  for (const id of ['abc', '0', '-3', '1.5', '99999999999', '2147483647']) {
+    await page.goto(`/?id=${id}`);
+    await expect(game.meta).toBeVisible();
+    await expect(game.meta).toContainText('Lượt 1/6');
+    await expect(game.keywordButton).toHaveText(/^#\d+$/); // một ván ngẫu nhiên bình thường
+    await expect(page.locator('.panel[role=alert]')).toHaveCount(0);
+  }
+  // số hợp lệ nhưng không có từ khóa: tới "/" chứ không dừng ở một trang lỗi hay đường dẫn trung gian
+  await page.goto('/?id=2147483647');
+  await expect(game.meta).toBeVisible();
+  expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe('/');
+});
+
 test('chọn số khi ván đã kết thúc; số ngoài khoảng bị server từ chối; cùng số luôn ra cùng từ khóa', async ({ game, page, request }) => {
   const created = await (await request.post('/api/games', { data: {} })).json();
   const { keywordCount: count } = created as { keywordCount: number };
@@ -221,6 +266,43 @@ test('chọn số khi ván đã kết thúc; số ngoài khoảng bị server t�
   await expect(game.meta).toContainText('Lượt 1/6');
   await expect(game.endedBar).toHaveCount(0);
   await expect(game.input).toBeFocused();
+});
+
+test.describe('chia sẻ link từ khóa ở màn hình kết thúc', () => {
+  test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
+
+  test('nút chia sẻ copy link /?id=N vào clipboard, mở link ra đúng từ khóa; không copy được thì hiện link để tự copy', async ({ game, page }) => {
+    await page.goto('/?id=7');
+    await expect(game.keywordButton).toHaveText('#7');
+    const structure = await game.structure();
+    for (let i = 0; i < 6; i++) await game.guessScored(structure.map((n) => 'b'.repeat(n)).join(' '), i);
+    await expect(game.endgame).toBeVisible();
+
+    const share = game.shareButton;
+    await expect(share).toHaveText(/^Thách bạn bè đoán từ này/);
+    const link = `${new URL(page.url()).origin}/?id=7`;
+
+    // bấm: link có ?id= của từ khóa này nằm trong clipboard, nút báo đã copy rồi trở lại như cũ
+    await share.click();
+    await expect(share).toHaveText(/Đã copy link/);
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(link);
+    await expect(share).toHaveText(/^Thách bạn bè đoán từ này/, { timeout: 8000 });
+
+    // trình duyệt không cho copy: hiện link trong một ô (đã chọn sẵn) để người chơi tự copy
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) }, configurable: true });
+      document.execCommand = () => false;
+    });
+    await share.click();
+    await expect(game.endgame.getByRole('alert')).toContainText('Không copy tự động được');
+    await expect(game.endgame.getByLabel('Link chia sẻ từ khóa')).toHaveValue(link);
+
+    // link đã copy: mở ra bắt đầu ván mới với đúng từ khóa số 7
+    await page.goto(link);
+    await expect(game.keywordButton).toHaveText('#7');
+    await expect(game.meta).toContainText('Lượt 1/6');
+    expect(await game.structure()).toEqual(structure);
+  });
 });
 
 test('chuỗi chữ bất kỳ vẫn được chấm; thua sau 6 lượt; tải lại trang; Chơi lại', async ({ game, page }) => {

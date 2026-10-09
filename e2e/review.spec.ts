@@ -70,3 +70,13 @@ test.skip('Hint không gợi ý ô đã xanh lá', async ({ game, page }) => {
   await game.guessScored('vũ trụ', 1);
   await expect(game.endgame.locator('.endgame-title')).toHaveText('Chính xác!');
 });
+
+test('từ không phải từ khóa không có số #N nên màn kết thúc không có nút chia sẻ', async ({ game }) => {
+  await game.open('biến ngẫu nhiên'); // có trong từ điển nhưng dài hơn 12 chữ cái nên không phải từ khóa
+  await expect(game.keywordButton).toHaveCount(0);
+  await game.guess('biến ngẫu nhiên');
+  await expect(game.endgame.locator('.endgame-title')).toHaveText('Chính xác!');
+  await expect(game.shareButton).toHaveCount(0);
+  await expect(game.endgame.getByRole('button', { name: 'Chơi lại' })).toBeVisible();
+});
+

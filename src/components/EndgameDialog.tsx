@@ -1,6 +1,8 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { copyToClipboard } from '@/lib/client/clipboard';
+import { buildShareLink } from '@/lib/game/keywords';
 import type { PublicGame } from '@/lib/game/types';
 import Cell from './Cell';
 import Modal from './Modal';
@@ -15,7 +17,7 @@ interface Props {
 /** Màn hình kết thúc ván: công bố từ khóa, giải nghĩa, bên dưới là nút Chơi lại. */
 export default function EndgameDialog({ open, game, onReplay, onClose }: Props) {
   const replayRef = useRef<HTMLButtonElement>(null);
-  const { won, answer = '', definitions = [], rows, maxTurns } = game;
+  const { won, answer = '', definitions = [], rows, maxTurns, keywordNo } = game;
 
   return (
     <Modal open={open && game.over} onClose={onClose} className="endgame-dlg" label="Kết quả ván chơi" initialFocus={replayRef}>
@@ -57,6 +59,8 @@ export default function EndgameDialog({ open, game, onReplay, onClose }: Props) 
           <p className="muted">Chưa có giải nghĩa cho từ này trong từ điển.</p>
         )}
 
+        {keywordNo !== null && <ShareLink keywordNo={keywordNo} />}
+
         <div className="endgame-actions">
           <button ref={replayRef} className="btn" type="button" onClick={onReplay}>Chơi lại</button>
           <button className="link-btn" type="button" onClick={onClose}>Xem lại ô chữ</button>
@@ -64,6 +68,54 @@ export default function EndgameDialog({ open, game, onReplay, onClose }: Props) 
         <p className="source-note">Nguồn giải nghĩa: Từ điển tiếng Việt (TVTD) qua minhqnd/dictionary · CC BY-SA 4.0</p>
       </section>
     </Modal>
+  );
+}
+
+const COPIED_MESSAGE_MS = 3000;
+
+/**
+ * Nút copy link chia sẻ từ khóa này (`/?id=N`) vào clipboard. Báo kết quả ngay trên nút (hộp thoại che mất thông báo nhanh của trang).
+ * Nếu trình duyệt không cho copy thì hiện link trong một ô để người chơi tự copy.
+ * Được dựng lại mỗi lần mở hộp thoại nên trạng thái luôn bắt đầu từ đầu.
+ */
+function ShareLink({ keywordNo }: { keywordNo: number }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [link, setLink] = useState('');
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  async function copy(button: HTMLButtonElement) {
+    const url = buildShareLink(window.location.origin, keywordNo);
+    setLink(url);
+    clearTimeout(timer.current);
+    if (await copyToClipboard(url, button.closest('dialog') ?? document.body)) {
+      setState('copied');
+      timer.current = setTimeout(() => setState('idle'), COPIED_MESSAGE_MS);
+    } else {
+      setState('failed');
+    }
+  }
+
+  return (
+    <div className="share">
+      <button className="btn secondary share-btn" type="button" title="Copy link vào clipboard để gửi cho bạn bè" onClick={(e) => copy(e.currentTarget)}>
+        {state === 'copied' ? '✓ Đã copy link! Gửi bạn bè nhé' : <>Thách bạn bè đoán từ này <span aria-hidden="true">🔗</span></>}
+      </button>
+      <p className="visually-hidden" role="status" aria-live="polite">{state === 'copied' ? 'Đã copy link vào clipboard' : ''}</p>
+      {state === 'failed' && (
+        <>
+          <p className="share-fail" role="alert">Không copy tự động được. Hãy chọn và copy link này:</p>
+          <input
+            className="share-link"
+            readOnly
+            value={link}
+            aria-label="Link chia sẻ từ khóa"
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+          />
+        </>
+      )}
+    </div>
   );
 }
 

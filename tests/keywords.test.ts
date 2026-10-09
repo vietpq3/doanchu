@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, test } from 'vitest';
-import { KEYWORD_LETTERS, keywordInfo } from '@/lib/game/keywords';
+import { KEYWORD_LETTERS, MAX_KEYWORD_NO, buildShareLink, keywordInfo, parseKeywordNo } from '@/lib/game/keywords';
 import { normalizeWord } from '@/lib/game/vietnamese';
 import { loadExclusionConfig } from '../scripts/keyword-exclusions';
 
@@ -29,6 +29,36 @@ describe('mục từ nào làm được từ khóa', () => {
     expect(keywordInfo('xe 2 bánh')).toBeNull();
     expect(keywordInfo('wifi miễn phí')).toBeNull();
     expect(keywordInfo('')).toBeNull();
+  });
+});
+
+describe('đọc số thứ tự từ khóa (?id=...)', () => {
+  test('số nguyên dương 1–10 chữ số', () => {
+    expect(parseKeywordNo('300')).toBe(300);
+    expect(parseKeywordNo('1')).toBe(1);
+    expect(parseKeywordNo('007')).toBe(7);
+    expect(parseKeywordNo(String(MAX_KEYWORD_NO))).toBe(MAX_KEYWORD_NO);
+  });
+
+  test('còn lại là null: 0, âm, thập phân, chữ, rỗng, quá lớn, không phải chuỗi', () => {
+    for (const bad of ['0', '000', '-1', '1.5', '1e3', '+5', ' 5', '5 ', 'abc', '12abc', '', String(MAX_KEYWORD_NO + 1), '99999999999']) {
+      expect(parseKeywordNo(bad), JSON.stringify(bad)).toBeNull();
+    }
+    for (const bad of [undefined, null, 300, ['300'], {}]) expect(parseKeywordNo(bad)).toBeNull();
+  });
+});
+
+describe('link chia sẻ từ khóa', () => {
+  test('dạng <origin>/?id=N, bỏ dấu / thừa ở cuối origin', () => {
+    expect(buildShareLink('https://doanchu.pqv.workers.dev', 300)).toBe('https://doanchu.pqv.workers.dev/?id=300');
+    expect(buildShareLink('http://localhost:3000/', 1)).toBe('http://localhost:3000/?id=1');
+  });
+
+  test('link tạo ra luôn được trang đọc lại đúng số (cùng định dạng ?id= với parseKeywordNo)', () => {
+    for (const no of [1, 7, 300, 36362, MAX_KEYWORD_NO]) {
+      const url = new URL(buildShareLink('https://example.com', no));
+      expect([url.pathname, parseKeywordNo(url.searchParams.get('id'))]).toEqual(['/', no]);
+    }
   });
 });
 

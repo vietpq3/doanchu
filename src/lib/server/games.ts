@@ -1,5 +1,6 @@
 import 'server-only';
 import { hintCandidates } from '@/lib/game/hints';
+import { MAX_KEYWORD_NO } from '@/lib/game/keywords';
 import { scoreGuess } from '@/lib/game/scoring';
 import { normalizeWord, wordInfo } from '@/lib/game/vietnamese';
 import type { ErrorCode, PublicGame } from '@/lib/game/types';
@@ -29,9 +30,6 @@ async function maybePurge() {
     console.error(err); // dọn dẹp lỗi thì không chặn người chơi
   }
 }
-
-/** Số thứ tự từ khóa lớn nhất nhận được: giới hạn của cột integer trong CSDL. */
-const MAX_KEYWORD_NO = 2_147_483_647;
 
 /**
  * Tạo ván mới với từ khóa ngẫu nhiên, hoặc đúng từ khóa số `number` (1 đến tổng số từ khóa) do người chơi chọn.

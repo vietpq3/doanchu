@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import * as createRoute from '@/app/api/games/route';
 import * as guessRoute from '@/app/api/games/[id]/guesses/route';
 import * as hintRoute from '@/app/api/games/[id]/hints/route';
+import * as startRoute from '@/app/api/games/start/route';
 import type { PublicGame } from '@/lib/game/types';
 import { getGame } from '@/lib/server/games';
 import { setRepositoryForTests } from '@/lib/server/repository';
@@ -214,6 +215,41 @@ describe('số thứ tự từ khóa (#N)', () => {
   test('chọn sẵn từ khóa bằng word (REVIEW_MODE): có số nếu là từ khóa, không có số nếu chỉ là từ trong từ điển', async () => {
     expect((await newGame({ word: 'hoà bình' })).game.keywordNo).toBe(2);
     expect((await newGame({ word: 'con mèo' })).game.keywordNo).toBeNull();
+  });
+});
+
+describe('GET /api/games/start?id=N (đích chuyển hướng của /?id=N)', () => {
+  const start = async (query: string) => {
+    const res = await startRoute.GET(new NextRequest(`http://localhost/api/games/start${query}`));
+    return { status: res.status, location: res.headers.get('location'), cookie: res.headers.get('set-cookie'), cache: res.headers.get('cache-control') };
+  };
+
+  test('tạo ván mới với từ khóa số N, ghi cookie ván đó và chuyển về "/"', async () => {
+    const res = await start('?id=2');
+    expect([res.status, res.location, res.cache]).toEqual([303, '/', 'no-store']);
+    expect(repo.games.size).toBe(1);
+    const [created] = [...repo.games.values()];
+    expect(created).toMatchObject({ answer: 'hòa bình', keywordNo: 2, over: false });
+    expect(res.cookie).toContain(`dc_game=${created.id}`);
+    expect(res.cookie).toMatch(/HttpOnly/i);
+    // về tới "/" rồi tải lại: ván trong cookie được tiếp tục, vẫn là từ khóa số 2
+    expect(await getGame(created.id)).toMatchObject({ keywordNo: 2, structure: [3, 4], rows: [] });
+  });
+
+  test('mỗi lần mở là một ván mới (kể cả cùng số), từ khóa vẫn như cũ', async () => {
+    const a = await start('?id=1');
+    const b = await start('?id=1');
+    expect(repo.games.size).toBe(2);
+    expect(a.cookie).not.toEqual(b.cookie);
+    expect([...repo.games.values()].map((g) => [g.answer, g.keywordNo])).toEqual([['vũ trụ', 1], ['vũ trụ', 1]]);
+  });
+
+  test('id không hợp lệ hoặc không có từ khóa số đó: không tạo ván, không ghi cookie, về "/"', async () => {
+    for (const query of ['', '?id=', '?id=abc', '?id=0', '?id=-1', '?id=1.5', '?id=99999999999', '?id=3', '?id=2147483647']) {
+      const res = await start(query);
+      expect([query, res.status, res.location, res.cookie]).toEqual([query, 303, '/', null]);
+    }
+    expect(repo.games.size).toBe(0);
   });
 });
 

@@ -12,6 +12,8 @@ export class GamePage {
   readonly keywordButton: Locator;
   /** hộp thoại chọn từ khóa theo số */
   readonly keywordDialog: Locator;
+  /** nút chia sẻ link từ khóa trong màn hình kết thúc (chữ trên nút đổi sau khi copy, nên tìm theo class) */
+  readonly shareButton: Locator;
   /** nút Hint */
   readonly hintButton: Locator;
   /** các ô gợi ý đang hiện mờ ở hàng đang gõ */
@@ -25,6 +27,7 @@ export class GamePage {
     this.endgame = page.locator('dialog.endgame-dlg[open]');
     this.endedBar = page.locator('.ended-bar');
     this.hintButton = page.getByRole('button', { name: /^Hint/ });
+    this.shareButton = this.endgame.locator('.share-btn');
     this.keywordButton = page.locator('.keyword-no');
     this.keywordDialog = page.locator('dialog[open]', { has: page.locator('#keyword-no') });
     this.hintCells = page.locator('.row.current .cell[data-hint="1"]');

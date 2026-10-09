@@ -151,9 +151,10 @@ Mỗi lần chạy test E2E tạo vài ván thật trong bảng `games`; ván c�
   - Đổi kiểu dấu: sửa `DEFAULT_STYLE` trong `src/lib/game/vietnamese.ts`, rồi chạy lại `npm run db:seed`.
 - **Cách gõ:** gõ vào ô nhập bằng bộ gõ tiếng Việt của máy (Unikey/EVKey, Telex/VNI của macOS, bàn phím iOS/Android). Game không tự xử lý Telex. Bên dưới ô nhập là bảng chữ cái tô màu theo kết quả.
 - **Số thứ tự từ khóa:** số `#N` hiện ở góc trên bên trái, là số của từ khóa đang chơi (xem [Bộ từ khóa](#bộ-từ-khóa)). Bấm vào đó mở hộp thoại chọn số (từ 1 đến tổng số từ khóa): nhập số rồi bấm **Bắt đầu** thì bỏ ván hiện tại và bắt đầu ván mới với đúng từ khóa đó; cùng số thì luôn ra cùng từ khóa. Dùng được cả khi ván đã kết thúc. Server từ chối số ngoài khoảng (`keyword_not_found`) hoặc không phải số nguyên (`bad_request`). Từ khóa không lộ ra trước khi ván kết thúc dù biết số.
+  - **Link `/?id=300`**: mở đường dẫn này để bắt đầu ván mới với từ khóa số 300 (gửi cho người khác được). Trang chuyển hướng sang `GET /api/games/start?id=300` (tạo ván và ghi cookie) rồi về `/`, nên URL cuối không còn `?id=` và tải lại trang vẫn chơi tiếp đúng ván đó, kể cả khi chưa đoán lượt nào. Mỗi lần mở link là một ván mới (bỏ ván đang chơi). `id` không phải số nguyên dương hoặc không có từ khóa số đó thì bị bỏ qua: không tạo ván, vào `/` như bình thường. `?tu=` (REVIEW_MODE) được ưu tiên hơn `?id=`.
 - **New game:** nút dưới bảng chữ cái, chỉ hiện khi đang chơi. Bỏ từ khóa hiện tại (không tính thắng/thua) và bắt đầu ngay ván mới với từ khóa mới; ván bỏ dở được dọn tự động như ván cũ. Không hỏi xác nhận.
 - **Hint:** nút cạnh New game, hiện số lần còn lại (`Hint (3)`). Mỗi ván được gợi ý tối đa **3 lần**, không mất lượt đoán. Server chọn ngẫu nhiên một ô chưa từng được tô xanh lá ở lượt nào và chưa được gợi ý; chữ đúng của ô đó hiện mờ (viền đứt) ở hàng đang gõ, trong ô người chơi chưa gõ chữ, và vẫn hiện ở các lượt sau. Gợi ý lưu ở server nên tải lại trang vẫn giữ; ván mới (New game / Chơi lại) có lại 3 lần. Đổi số lần ở `maxHints` trong `src/lib/server/config.ts`. **Hiện đang tạm ẩn** nút và dòng giải thích trong luật chơi bằng CSS (`.hint-feature` trong `globals.css`; xoá rule đó và bỏ `test.skip` ở hai test Hint trong `e2e/` để hiện lại); API `POST /api/games/:id/hints` vẫn hoạt động.
-- **Kết thúc ván:** màn hình kết thúc hiện 0,7 giây sau lượt cuối, gồm từ khóa, giải nghĩa, nút Chơi lại và nút đóng để xem lại ô chữ.
+- **Kết thúc ván:** màn hình kết thúc hiện 0,7 giây sau lượt cuối, gồm từ khóa, giải nghĩa, nút **"Thách bạn bè đoán từ này 🔗"**, nút Chơi lại và nút đóng để xem lại ô chữ. Nút share copy link `<origin>/?id=N` (N là số thứ tự của từ khóa) vào clipboard và đổi chữ thành "✓ Đã copy link! Gửi bạn bè nhé" trong 3 giây; người nhận mở link sẽ vào thẳng từ khóa đó (xem *Link `/?id=300`* ở trên). Nếu trình duyệt không cho copy (trang http, trình duyệt nhúng...) thì hiện link trong một ô đã chọn sẵn để tự copy. Ván không có số thứ tự (ván cũ trước v1.1.0, hoặc từ không phải từ khóa chọn bằng `?tu=`) thì không có nút này.
 
 ## Kiến trúc
 
@@ -163,6 +164,7 @@ src/
     page.tsx                         Trang chơi (Server Component): tiếp tục ván trong cookie hoặc tạo ván mới
     layout.tsx, globals.css, error.tsx, icon.svg
     api/games/route.ts               POST: tạo ván mới (nút Chơi lại, New game; body { number } để chọn từ khóa theo số)
+    api/games/start/route.ts         GET ?id=N: tạo ván với từ khóa số N, ghi cookie, chuyển về / (đích của link /?id=N)
     api/games/[id]/guesses/route.ts  POST: gửi lượt đoán — server kiểm tra, chấm màu, lưu
     api/games/[id]/hints/route.ts    POST: nút Hint — server chọn ngẫu nhiên một ô chưa xanh lá, lưu
   components/                        Giao diện (GameScreen là Client Component duy nhất có state; KeywordDialog: chọn từ khóa theo số)
@@ -219,6 +221,8 @@ npm version 1.4.0 --no-git-tag-version   # hoặc chỉ định thẳng một s�
 
 Các lệnh sửa `package.json` + `package-lock.json`; số được nhúng vào code lúc build nên phải tăng **trước** `npm run deploy`. Lịch sử bên dưới ghi các thay đổi đáng chú ý; bản vá nhỏ có thể gộp thành một dòng.
 
+- **v1.1.2**: nút **"Thách bạn bè đoán từ này 🔗"** ở màn hình kết thúc: copy link `/?id=N` của từ khóa vào clipboard để gửi cho bạn bè.
+- **v1.1.1**: link `/?id=N` vào thẳng từ khóa số N; danh sách loại trừ từ khóa (từ phụ trợ, danh từ riêng): kho còn 36.362 từ (trước đó 40.709), số `#N` được đánh lại.
 - **v1.1.0**: nút New game; bộ từ khóa 40.709 từ (trước đó 660 từ); số thứ tự từ khóa `#N` ở góc trên bên trái và chọn từ khóa theo số; nút Hint (đang tạm ẩn); hiện số phiên bản trong Luật chơi.
 - **v1.0.0**: bản đầu tiên: ván 6 lượt, luật màu bốn màu, giải nghĩa và nút Chơi lại, bộ 660 từ khóa.
 

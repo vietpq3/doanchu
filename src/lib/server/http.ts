@@ -7,16 +7,27 @@ import { GameError } from './games';
 export const GAME_COOKIE = 'dc_game';
 const GAME_COOKIE_MAX_AGE = 7 * 24 * 60 * 60;
 
-/** Trả trạng thái ván và ghi nhớ ván đó trong cookie. */
-export function gameResponse(game: PublicGame, status = 200): NextResponse<PublicGame> {
-  const res = NextResponse.json(game, { status });
-  res.cookies.set(GAME_COOKIE, game.id, {
+function rememberGame(res: NextResponse, id: string) {
+  res.cookies.set(GAME_COOKIE, id, {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: GAME_COOKIE_MAX_AGE,
   });
+}
+
+/** Trả trạng thái ván và ghi nhớ ván đó trong cookie. */
+export function gameResponse(game: PublicGame, status = 200): NextResponse<PublicGame> {
+  const res = NextResponse.json(game, { status });
+  rememberGame(res, game.id);
+  return res;
+}
+
+/** Chuyển hướng (303) tới `location`, ghi nhớ `game` trong cookie nếu có. Không cache vì đã có tác dụng phụ (tạo ván). */
+export function redirectResponse(location: string, game?: PublicGame): NextResponse {
+  const res = new NextResponse(null, { status: 303, headers: { Location: location, 'Cache-Control': 'no-store' } });
+  if (game) rememberGame(res, game.id);
   return res;
 }
 

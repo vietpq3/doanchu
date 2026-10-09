@@ -24,3 +24,22 @@ export function keywordInfo(raw: string): WordInfo | null {
   if (info.cells.length < KEYWORD_LETTERS.min || info.cells.length > KEYWORD_LETTERS.max) return null;
   return info;
 }
+
+/** Số thứ tự từ khóa lớn nhất nhận được: giới hạn của cột integer trong CSDL. */
+export const MAX_KEYWORD_NO = 2_147_483_647;
+
+/**
+ * Đọc số thứ tự từ khóa từ một chuỗi (vd: tham số `?id=300` của đường dẫn): 1 đến 10 chữ số, trong 1..MAX_KEYWORD_NO.
+ * Không phải số nguyên dương hợp lệ thì trả về null. Không kiểm tra số có tồn tại trong bộ từ khóa hay không.
+ */
+export function parseKeywordNo(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^\d{1,10}$/.test(value)) return null;
+  const no = Number(value);
+  return no >= 1 && no <= MAX_KEYWORD_NO ? no : null;
+}
+
+/** Link chia sẻ từ khóa số `no`: mở link này bắt đầu ván mới với đúng từ khóa đó (xem src/app/page.tsx, parseKeywordNo). */
+export function buildShareLink(origin: string, no: number): string {
+  return `${origin.replace(/\/+$/, '')}/?id=${no}`;
+}
+
