@@ -1,0 +1,19 @@
+# Sao chép thành .dev.vars rồi điền. KHÔNG commit .dev.vars.
+# Được đọc bởi: npm run dev, npm run preview (wrangler), npm run db:migrate, npm run db:seed.
+# Không dùng .env/.env.local cho secret: OpenNext gói mọi file .env* của Next.js vào code của Worker khi build.
+
+# Chọn bộ biến của Next.js khi chạy trong Workers ở local
+NEXTJS_ENV=development
+# 1 = cho phép chọn sẵn từ khóa bằng /?tu=vũ trụ (chỉ để kiểm thử). Production đặt trong wrangler.jsonc.
+REVIEW_MODE=1
+
+# Project Supabase (Dashboard > Project Settings > API Keys)
+SUPABASE_URL=https://<project-ref>.supabase.co
+# Secret key (sb_secret_... hoặc service_role) — CHỈ dùng ở server. Trên Cloudflare: npx wrangler secret put SUPABASE_SECRET_KEY
+SUPABASE_SECRET_KEY=
+
+# Connection string Postgres, chỉ dùng cho npm run db:migrate (Dashboard > Connect > Session pooler)
+SUPABASE_DB_URL=
+
+# Từ điển SQLite nguồn, chỉ dùng cho npm run db:seed và npm run keywords
+DICTIONARY_DB_PATH=../../database/minhqnd_dictionary.db

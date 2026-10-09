@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "doanchu",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "doanchu"
+    }
+  ],
+  // Biến không bí mật. SUPABASE_SECRET_KEY đặt bằng: npx wrangler secret put SUPABASE_SECRET_KEY
+  "vars": {
+    "NEXT_PUBLIC_SUPABASE_URL": "https://yyeapzkzcpggvckkqpxg.supabase.co",
+    "REVIEW_MODE": "0"
+  },
+  "observability": { "enabled": true }
+}
