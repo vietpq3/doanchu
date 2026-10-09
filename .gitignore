@@ -51,6 +51,7 @@ next-env.d.ts
 /.wrangler/
 .dev.vars
 cloudflare-env.d.ts
+worker/worker-types.d.ts
 
 # Playwright
 /test-results/

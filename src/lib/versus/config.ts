@@ -1,0 +1,30 @@
+/**
+ * Hằng số của tính năng đấu theo nhóm (xem docs/versus-v2.md). Một nơi duy nhất để chỉnh.
+ * Dùng chung cho Durable Object (worker/) và giao diện, nên chỉ dùng import tương đối trong thư mục này.
+ */
+export const VERSUS = {
+  /** Số room cố định (tương lai sẽ cho thêm/xóa room) */
+  roomCount: 5,
+  /** Sảnh chờ nhận tối đa bấy nhiêu người khi VÀO room; người từ Bàn chơi quay về sảnh luôn được nhận */
+  lobbyMax: 10,
+  /** Số ô ở Bàn chơi */
+  seats: 6,
+  /** Số người ngồi bàn tối thiểu để bấm Start */
+  minPlayersToStart: 2,
+  /** Đếm ngược từ lúc bấm Start tới lúc bắt đầu ván */
+  countdownMs: 5_000,
+  /** Sau khi ván kết thúc: popup `OK (10s)` và phòng bị khóa chừng này thời gian */
+  resultLockMs: 10_000,
+  /** Giới hạn thời gian một ván */
+  matchMaxMs: 10 * 60_000,
+  /** Đang trong ván mà mất kết nối: chờ nối lại chừng này (tải lại trang không mất ván), quá hạn thì bị loại */
+  reconnectGraceMs: 30_000,
+  /** Số lượt đoán mỗi người (bằng config.maxTurns của Chơi đơn) */
+  maxTurns: 6,
+  /** Độ dài tên người chơi */
+  nameMax: 20,
+} as const;
+
+export const roomName = (id: number) => `Room #${id}`;
+
+export const isRoomId = (n: number) => Number.isInteger(n) && n >= 1 && n <= VERSUS.roomCount;

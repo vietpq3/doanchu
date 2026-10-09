@@ -1,7 +1,7 @@
 import 'server-only';
 import { hintCandidates } from '@/lib/game/hints';
+import { evaluateGuess, MAX_GUESS_LENGTH } from '@/lib/game/guess';
 import { MAX_KEYWORD_NO } from '@/lib/game/keywords';
-import { scoreGuess } from '@/lib/game/scoring';
 import { normalizeWord, wordInfo } from '@/lib/game/vietnamese';
 import type { ErrorCode, PublicGame } from '@/lib/game/types';
 import { config } from './config';
@@ -15,7 +15,6 @@ export class GameError extends Error {
   }
 }
 
-const MAX_GUESS_LENGTH = 100;
 const ID_PATTERN = /^[0-9a-f-]{36}$/;
 
 /** Dọn ván cũ tối đa một lần mỗi giờ (mỗi tiến trình/isolate), chạy kèm khi tạo ván mới. */
@@ -79,17 +78,11 @@ export async function submitGuess(id: string, raw: unknown): Promise<PublicGame>
   const game = ID_PATTERN.test(id) ? await repo.findGame(id) : null;
   if (!game) throw new GameError(404, 'game_not_found', 'Ván chơi không tồn tại hoặc đã hết hạn');
   if (game.over) throw new GameError(409, 'game_over', 'Ván đã kết thúc');
-  if (typeof raw !== 'string' || raw.length > MAX_GUESS_LENGTH) throw new GameError(400, 'bad_request', 'Lượt đoán không hợp lệ');
+  const result = evaluateGuess(raw, game.answer);
+  if (!result.ok) throw new GameError(400, result.code, result.message);
 
-  const text = raw.trim();
-  const guess = text ? wordInfo(text) : null;
-  if (text && !guess) throw new GameError(400, 'invalid_chars', 'Chỉ dùng chữ cái tiếng Việt');
-  const answer = wordInfo(game.answer)!;
-  if (!guess || guess.cells.length < answer.cells.length) throw new GameError(400, 'incomplete', 'Chưa đủ chữ cái');
-  if (guess.structure.join() !== answer.structure.join()) throw new GameError(400, 'wrong_structure', 'Số chữ cái không khớp ô chữ');
-
-  game.guesses.push({ word: guess.word, statuses: scoreGuess(guess.cells, answer.cells) });
-  game.won = guess.word === answer.word;
+  game.guesses.push({ word: result.word, statuses: result.statuses });
+  game.won = result.correct;
   game.over = game.won || game.guesses.length >= config.maxTurns;
   if (!(await repo.saveGuesses(game))) {
     throw new GameError(409, 'game_over', 'Lượt đoán đã được ghi nhận, hãy tải lại trang');

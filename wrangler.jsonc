@@ -1,7 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "doanchu",
-  "main": ".open-next/worker.js",
+  // Worker tùy biến: chuyển WebSocket /ws/rooms/:id sang Durable Object, phần còn lại giao cho OpenNext (.open-next/worker.js)
+  "main": "worker/index.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
@@ -14,6 +15,11 @@
       "service": "doanchu"
     }
   ],
+  // Mỗi room đấu theo nhóm là một Durable Object (nền SQLite, gói Free chỉ cho loại này)
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "RoomDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO"] }],
   // Biến không bí mật. SUPABASE_SECRET_KEY đặt bằng: npx wrangler secret put SUPABASE_SECRET_KEY
   "vars": {
     "NEXT_PUBLIC_SUPABASE_URL": "https://yyeapzkzcpggvckkqpxg.supabase.co",
