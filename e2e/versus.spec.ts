@@ -346,6 +346,11 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   const c = await Player.create(browser, base(testInfo), `Chi-${uid()}`);
   await c.enter('/rooms/2');
   await expect(c.start).toBeDisabled();
+  // Bảng xếp hạng: cả 3 người trong phòng, mặc định 0 ván, chưa ai có vương miện (mỗi lần chạy e2e local, DO bắt đầu trống)
+  await expect(c.page.getByRole('heading', { name: 'Bảng xếp hạng' })).toBeVisible();
+  await expect(c.page.locator('.lb-row')).toHaveCount(3);
+  await expect(c.page.locator('.lb-wins')).toHaveText(['0', '0', '0']);
+  await expect(c.page.locator('.medal')).toHaveCount(0);
 
   const t0 = Date.now();
   await a.start.click();
@@ -414,6 +419,22 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   await expect(b.page.locator('.last-result')).toContainText(a.name);
   await expect(b.page.locator('.last-result .defs li').first()).toBeVisible();
   await expect(b.lobbyTags).toHaveCount(3);
+  // Bảng xếp hạng hôm nay: a thắng 1 ván, hạng nhất có vương miện; b, c vẫn có trên bảng với 0 ván, không có vương miện;
+  // thẻ tên của a ở Sảnh chờ có khung vàng và vương miện, người khác thì không
+  const rows = b.page.locator('.lb-row');
+  await expect(rows).toHaveCount(3);
+  await expect(rows.first()).toHaveClass(/medal-1/);
+  await expect(rows.first().locator('.lb-name')).toHaveText(a.name);
+  await expect(b.page.locator('.lb-wins')).toHaveText(['1', '0', '0']);
+  await expect(b.page.locator('.lb-row.medal')).toHaveCount(1);
+  await expect(b.lobbyTags.filter({ hasText: a.name })).toHaveClass(/medal-1/);
+  await expect(b.lobbyTags.filter({ hasText: a.name }).locator('.crown')).toBeVisible();
+  await expect(b.page.locator('.name-tag.medal')).toHaveCount(1);
+  // Leader Board nằm bên phải Sảnh chờ
+  const lobbyBox = (await b.page.locator('.lobby').boundingBox())!;
+  const boardBox = (await b.page.locator('.leaderboard').boundingBox())!;
+  expect(boardBox.x).toBeGreaterThan(lobbyBox.x + lobbyBox.width - 1);
+  expect(Math.abs(boardBox.y - lobbyBox.y)).toBeLessThan(2);
   // "Lượt trước" nằm DƯỚI nút Start (Start không bị đẩy xuống dưới giải nghĩa) và Start vẫn thấy được mà không phải cuộn
   const startBox = (await b.start.boundingBox())!;
   const lastBox = (await b.page.locator('.last-result').boundingBox())!;
@@ -422,6 +443,7 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   // a để popup tự hết giờ (10s) rồi tự về Inside Room
   await expect(a.page).toHaveURL(/\/rooms\/2$/, { timeout: 15_000 });
   await expect(a.page.locator('.seat.empty')).toHaveCount(6);
+  await expect(a.page.locator('.lb-row.you .lb-name')).toContainText(a.name); // dòng của chính mình
 
   // phòng mở lại sau khi khóa: lại ngồi bàn được
   await expect(a.page.getByText('đã khóa')).toHaveCount(0, { timeout: 15_000 });
@@ -533,15 +555,16 @@ test('chat: laptop có khung chat bên cạnh, điện thoại có bubble (chấ
   // bấm bubble lần nữa thì đóng
   await b.chatBubble.click();
   await expect(b.chatPanel).toBeHidden();
-  // chạm ra ngoài khung chat cũng đóng; lần chạm đó chỉ để đóng, không bấm xuống ô ngồi bàn ở bên dưới
+  // chạm ra ngoài khung chat cũng đóng; lần chạm đó chỉ để đóng, không bấm xuống nút ở bên dưới (ở đây là nút Rời phòng)
   await b.chatBubble.click();
   await expect(b.chatPanel).toBeVisible();
-  const seat3 = b.page.getByRole('button', { name: 'Ngồi vào ô 3' });
-  const seatBox = (await seat3.boundingBox())!;
-  expect(seatBox.y + seatBox.height).toBeLessThan((await b.chatPanel.boundingBox())!.y); // ô 3 không nằm dưới khung chat
-  await b.page.touchscreen.tap(seatBox.x + seatBox.width / 2, seatBox.y + seatBox.height / 2);
+  const leaveButton = b.page.locator('.topbar .leave-btn');
+  const leaveBox = (await leaveButton.boundingBox())!;
+  expect(leaveBox.y + leaveBox.height).toBeLessThan((await b.chatPanel.boundingBox())!.y); // nút không nằm dưới khung chat
+  await b.page.touchscreen.tap(leaveBox.x + leaveBox.width / 2, leaveBox.y + leaveBox.height / 2);
   await expect(b.chatPanel).toBeHidden();
-  await expect(seat3).toBeVisible(); // ô 3 vẫn trống
+  await expect(b.page.getByRole('heading', { name: /Sảnh chờ/ })).toBeVisible(); // vẫn ở trong phòng
+  await expect(a.page.locator('.name-tag, .seat.taken', { hasText: b.name })).toHaveCount(1);
   await expect(b.chatBubble).toHaveAttribute('aria-expanded', 'false');
 
   // laptop: nút cạnh chữ "Chat" thu gọn sidebar (trượt sang phải, còn dải hẹp); có tin mới thì nút mở lại có chấm đỏ; mở lại thì hết chấm

@@ -773,3 +773,164 @@ describe('chat của phòng', () => {
     expect(m.nextWakeAt()).toBe(wake);
   });
 });
+
+describe('Leader Board / Bảng xếp hạng (số ván thắng trong ngày của người đang ở trong phòng, reset 00:00 giờ Việt Nam)', () => {
+  // T0 = 1970-01-01 00:16:40 UTC = 07:16:40 giờ Việt Nam; 00:00 ngày hôm sau (giờ VN) là 17:00 UTC
+  const MIDNIGHT = 17 * 60 * 60_000;
+
+  /** Một ván giữa hai người `p1`, `p2` (ngồi ô 1, 2; p1 bấm Start) lúc `now`: `winner` đoán đúng, null = cả hai hết lượt. */
+  function playMatch(m: RoomMachine, p1: string, p2: string, winner: string | null, now: number): number {
+    expect(m.sit(p1, 0)).toEqual({ ok: true });
+    expect(m.sit(p2, 1)).toEqual({ ok: true });
+    expect(m.start(p1, now)).toEqual({ ok: true });
+    let t = now + VERSUS.countdownMs;
+    expect(m.tick(t).needAnswer).toBe(true);
+    expect(m.beginMatch(ANSWER, DEFS, t)).toBe(true);
+    if (winner) {
+      expect(m.guess(winner, ANSWER, (t += 1000))).toEqual({ ok: true });
+    } else {
+      for (let i = 0; i < VERSUS.maxTurns; i++) for (const p of [p1, p2]) m.guess(p, WRONG, (t += 10));
+    }
+    t += VERSUS.resultLockMs;
+    m.tick(t); // phòng mở lại
+    return t + 1;
+  }
+  /** hai người a (An), b (Bình) ở Sảnh chờ */
+  function twoInLobby() {
+    const m = create();
+    join(m, 'a', 'An');
+    join(m, 'b', 'Bình');
+    return m;
+  }
+  /** "hạng.tên:số ván" từng dòng, "*" = có vương miện */
+  const board = (m: RoomMachine, id: string, now: number) => {
+    const v = view(m, id, now);
+    return v.leaderboard.map((e) => `${e.rank}.${e.name}:${e.wins}${v.medals[e.name] ? '*' : ''}`);
+  };
+
+  test('mọi người đang ở trong phòng đều có trên bảng, mặc định 0 ván; chưa ai thắng thì không ai có vương miện', () => {
+    const m = twoInLobby();
+    join(m, 'c', 'Chi', T0 + 10);
+    expect(board(m, 'a', T0 + 10)).toEqual(['1.An:0', '2.Bình:0', '3.Chi:0']); // bằng nhau: ai vào trước xếp trên
+    expect(view(m, 'c', T0 + 10).leaderboard[2]).toEqual({ name: 'Chi', wins: 0, rank: 3, isYou: true });
+    expect(view(m, 'a', T0 + 10).medals).toEqual({});
+  });
+
+  test('0 ván thắng thì không có vương miện, kể cả khi đứng trong top 3', () => {
+    const m = twoInLobby();
+    join(m, 'c', 'Chi');
+    join(m, 'd', 'Dũng');
+    let t = playMatch(m, 'a', 'b', 'a', T0); // chỉ An thắng
+    expect(board(m, 'd', t)).toEqual(['1.An:1*', '2.Bình:0', '3.Chi:0', '4.Dũng:0']);
+    t = playMatch(m, 'c', 'd', 'c', t); // thêm Chi: hai người có vương miện, hạng 3 (0 ván) thì không
+    expect(board(m, 'd', t)).toEqual(['1.An:1*', '2.Chi:1*', '3.Bình:0', '4.Dũng:0']);
+    expect(view(m, 'd', t).medals).toEqual({ An: 1, Chi: 2 });
+  });
+
+  test('người đoán đúng được 1 ván và vương miện; ván không ai thắng thì không ai được', () => {
+    const m = twoInLobby();
+    let t = playMatch(m, 'a', 'b', null, T0);
+    expect(board(m, 'a', t)).toEqual(['1.An:0', '2.Bình:0']);
+    t = playMatch(m, 'a', 'b', 'b', t);
+    expect(board(m, 'a', t)).toEqual(['1.Bình:1*', '2.An:0']);
+    expect(view(m, 'a', t).medals).toEqual({ Bình: 1 });
+  });
+
+  test('bằng số ván thì người đang giữ vương miện được giữ', () => {
+    const m = twoInLobby();
+    join(m, 'c', 'Chi');
+    let t = playMatch(m, 'a', 'b', 'a', T0); // An 1: vàng
+    t = playMatch(m, 'b', 'c', 'b', t); // Bình 1: bằng An, An đang giữ vàng nên Bình bạc
+    expect(board(m, 'c', t)).toEqual(['1.An:1*', '2.Bình:1*', '3.Chi:0']);
+    // An rời phòng: Bình lên vàng
+    m.leave('a', t);
+    expect(board(m, 'c', t)).toEqual(['1.Bình:1*', '2.Chi:0']);
+    // An vào lại (cùng trình duyệt): có lại 1 ván, bằng Bình; Bình đang giữ vàng nên vẫn vàng, dù An đạt 1 ván trước
+    join(m, 'a', 'An', (t += 1000));
+    expect(board(m, 'c', t)).toEqual(['1.Bình:1*', '2.An:1*', '3.Chi:0']);
+    // An thắng thêm: hơn hẳn thì lên vàng
+    t = playMatch(m, 'a', 'c', 'a', t);
+    expect(board(m, 'c', t)).toEqual(['1.An:2*', '2.Bình:1*', '3.Chi:0']);
+  });
+
+  test('chỉ 3 người đầu (có ít nhất 1 ván) có vương miện; có người rời thì tính lại vương miện', () => {
+    const m = twoInLobby();
+    join(m, 'c', 'Chi');
+    join(m, 'd', 'Dũng');
+    let t = T0;
+    t = playMatch(m, 'a', 'b', 'a', t);
+    t = playMatch(m, 'a', 'b', 'a', t); // An 2
+    t = playMatch(m, 'b', 'c', 'b', t); // Bình 1
+    t = playMatch(m, 'c', 'd', 'c', t); // Chi 1
+    t = playMatch(m, 'd', 'a', 'd', t); // Dũng 1
+    expect(board(m, 'a', t)).toEqual(['1.An:2*', '2.Bình:1*', '3.Chi:1*', '4.Dũng:1']);
+    expect(view(m, 'a', t).medals).toEqual({ An: 1, Bình: 2, Chi: 3 });
+    m.leave('b', t); // bạc rời phòng: Chi lên bạc, Dũng (không giữ vương miện) lên đồng
+    expect(board(m, 'a', t)).toEqual(['1.An:2*', '2.Chi:1*', '3.Dũng:1*']);
+  });
+
+  test('người rời phòng bị bỏ khỏi bảng; người mới trùng tên không nhận số ván của người cũ', () => {
+    const m = twoInLobby();
+    let t = playMatch(m, 'a', 'b', 'a', T0);
+    m.leave('a', t);
+    expect(board(m, 'b', t)).toEqual(['1.Bình:0']);
+    join(m, 'x', 'An', t); // người khác, cùng tên "An"
+    expect(board(m, 'b', t)).toEqual(['1.Bình:0', '2.An:0']);
+    expect(view(m, 'b', t).medals).toEqual({});
+    // người cũ quay lại (cùng playerId): có lại số ván; tên bị trùng nên thành "An (2)"
+    join(m, 'a', 'An', (t += 1000));
+    expect(board(m, 'b', t)).toEqual(['1.An (2):1*', '2.Bình:0', '3.An:0']);
+    expect(view(m, 'b', t).medals).toEqual({ 'An (2)': 1 });
+    // phòng trống: số ván vẫn được nhớ trong ngày
+    for (const id of ['a', 'b', 'x']) m.leave(id, t);
+    join(m, 'a', 'An', (t += 1000));
+    expect(board(m, 'a', t)).toEqual(['1.An:1*']);
+  });
+
+  test('00:00 giờ Việt Nam thì reset; phòng có người thì thức dậy đúng lúc đó để cập nhật', () => {
+    const m = twoInLobby();
+    const t = playMatch(m, 'a', 'b', 'a', T0);
+    expect(t).toBeLessThan(MIDNIGHT);
+    expect(m.nextWakeAt()).toBe(MIDNIGHT);
+    expect(board(m, 'a', MIDNIGHT - 1)).toEqual(['1.An:1*', '2.Bình:0']);
+    expect(board(m, 'a', MIDNIGHT)).toEqual(['1.An:0', '2.Bình:0']); // ngày mới, kể cả trước khi alarm chạy
+    m.tick(MIDNIGHT);
+    expect(m.state.scores).toMatchObject({ entries: [], crowns: [] });
+    expect(m.nextWakeAt()).toBeNull();
+    const t2 = playMatch(m, 'b', 'a', 'b', MIDNIGHT + 1000);
+    expect(board(m, 'a', t2)).toEqual(['1.Bình:1*', '2.An:0']);
+    expect(m.nextWakeAt()).toBe(MIDNIGHT + 24 * 60 * 60_000);
+  });
+
+  test('phòng trống thì không cần thức dậy lúc 00:00 (người vào sau thấy bảng đã reset)', () => {
+    const m = twoInLobby();
+    const t = playMatch(m, 'a', 'b', 'a', T0);
+    m.leave('a', t);
+    m.leave('b', t);
+    expect(m.nextWakeAt()).toBeNull();
+    join(m, 'a', 'An', MIDNIGHT + 5);
+    expect(board(m, 'a', MIDNIGHT + 5)).toEqual(['1.An:0']);
+  });
+
+  test('trạng thái do bản cũ lưu (chưa có Leader Board, hoặc chưa có vương miện) đọc được', () => {
+    const m = twoInLobby();
+    const old = JSON.parse(JSON.stringify(m.state));
+    delete old.scores;
+    const restored = new RoomMachine(old, () => true);
+    expect(board(restored, 'a', T0)).toEqual(['1.An:0', '2.Bình:0']);
+    const t = playMatch(restored, 'a', 'b', 'a', T0);
+    expect(board(restored, 'b', t)).toEqual(['1.An:1*', '2.Bình:0']);
+    const noCrowns = JSON.parse(JSON.stringify(restored.state));
+    delete noCrowns.scores.crowns;
+    expect(board(new RoomMachine(noCrowns, () => true), 'b', t)).toEqual(['1.An:1*', '2.Bình:0']);
+  });
+
+  test('không lộ playerId của ai', () => {
+    const m = create();
+    const ids = ['pid-aaaa-1111-secret', 'pid-bbbb-2222-secret'];
+    join(m, ids[0], 'An');
+    join(m, ids[1], 'Bình');
+    const t = playMatch(m, ids[0], ids[1], ids[0], T0);
+    for (const viewer of ids) for (const id of ids) expect(JSON.stringify(view(m, viewer, t))).not.toContain(id);
+  });
+});

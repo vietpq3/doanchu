@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { currentDifficulty, useDifficulty } from '@/lib/client/difficulty';
 import { difficultyName } from '@/lib/game/difficulty';
 import { VERSUS } from '@/lib/versus/config';
-import type { RoomView } from '@/lib/versus/protocol';
+import type { Medal, RoomView } from '@/lib/versus/protocol';
 import DefinitionList from '../DefinitionList';
 import { useRoom, useRoomError, useSecondsLeft } from './RoomProvider';
 import VersusHeader from './VersusHeader';
@@ -21,6 +21,24 @@ function startLabel(view: RoomView, secondsLeft: number | null): string {
     default: return 'Start';
   }
 }
+
+const MEDAL_NAMES: Record<Medal, string> = { 1: 'hạng nhất', 2: 'hạng nhì', 3: 'hạng ba' };
+
+/** Vương miện nhỏ ở góc trên bên trái thẻ tên của 3 người đứng đầu Leader Board ("Bảng xếp hạng"; màu theo hạng, đặt bằng CSS). */
+function Crown() {
+  return (
+    <svg className="crown" viewBox="0 0 24 19" aria-hidden="true">
+      <path d="M3.2 15.5 1.6 6.2l5.6 4.1L12 3.2l4.8 7.1 5.6-4.1-1.6 9.3z" />
+      <path d="M3.4 16.6h17.2v2H3.4z" />
+      <circle cx="1.8" cy="5" r="1.6" />
+      <circle cx="12" cy="2" r="1.7" />
+      <circle cx="22.2" cy="5" r="1.6" />
+    </svg>
+  );
+}
+
+/** Lớp CSS và vương miện cho thẻ tên của người có hạng 1–3 trên Leader Board. */
+const medalClass = (medal: Medal | undefined) => (medal ? ` medal medal-${medal}` : '');
 
 /**
  * Từ khóa chọn sẵn để kiểm thử (`/rooms/1?tu=vũ trụ`), giống `?tu=` của Chơi đơn: gửi kèm lệnh Start và chỉ có tác dụng
@@ -88,15 +106,48 @@ export default function InsideRoomScreen() {
         </div>
         {status === 'reconnecting' && <div className="notice" role="status">Mất kết nối, đang thử nối lại…</div>}
 
-        <section className="lobby" aria-label="Sảnh chờ">
-          <h2 className="section-title">Sảnh chờ <span className="muted">({view.lobby.length}/{VERSUS.lobbyMax})</span></h2>
-          <ul className="name-tags">
-            {view.lobby.map((name) => (
-              <li key={name} className={'name-tag' + (name === view.youName && view.youSeat === null ? ' you' : '')}>{name}</li>
-            ))}
-            {view.lobby.length === 0 && <li className="muted">Không có ai ở sảnh</li>}
-          </ul>
-        </section>
+        <div className="lobby-row">
+          <section className="lobby" aria-label="Sảnh chờ">
+            <h2 className="section-title">Sảnh chờ <span className="muted">({view.lobby.length}/{VERSUS.lobbyMax})</span></h2>
+            <ul className="name-tags">
+              {view.lobby.map((name) => {
+                const medal = view.medals[name];
+                return (
+                  <li
+                    key={name}
+                    className={'name-tag' + (name === view.youName && view.youSeat === null ? ' you' : '') + medalClass(medal)}
+                    title={medal ? `${MEDAL_NAMES[medal]} bảng xếp hạng hôm nay` : undefined}
+                  >
+                    {medal && <Crown />}
+                    {name}
+                  </li>
+                );
+              })}
+              {view.lobby.length === 0 && <li className="muted">Không có ai ở sảnh</li>}
+            </ul>
+          </section>
+
+          <section className="leaderboard" aria-labelledby="leaderboard-title">
+            <h2 className="section-title" id="leaderboard-title">Bảng xếp hạng</h2>
+            <ol className="lb-list">
+              {view.leaderboard.map((e) => {
+                const medal = view.medals[e.name];
+                return (
+                  <li key={e.name} className={'lb-row' + (e.isYou ? ' you' : '') + medalClass(medal)}>
+                    {medal && <Crown />}
+                    <span className="lb-rank">{e.rank}</span>
+                    <span className="lb-name">
+                      {e.name}
+                      {e.isYou && <span className="visually-hidden"> (bạn)</span>}
+                    </span>
+                    <span className="lb-wins" aria-label={`${e.wins} ván thắng`}>{e.wins}</span>
+                  </li>
+                );
+              })}
+            </ol>
+            {view.leaderboard.length > 3 && <p className="lb-note muted">Cuộn để xem thêm {view.leaderboard.length - 3} người</p>}
+          </section>
+        </div>
 
         <section className="table-area" aria-label="Bàn chơi">
           <h2 className="section-title">
@@ -115,16 +166,18 @@ export default function InsideRoomScreen() {
                   </li>
                 );
               }
+              const medal = view.medals[name];
               return (
                 <li key={seat}>
                   <button
-                    className={'seat taken' + (mine ? ' you' : '')}
+                    className={'seat taken' + (mine ? ' you' : '') + medalClass(medal)}
                     type="button"
                     disabled={!(mine && canStand)}
                     onClick={() => send({ type: 'stand' })}
                     aria-label={mine ? `${name} (bạn): bấm để đứng dậy` : name}
                     title={mine && canStand ? 'Bấm để đứng dậy về sảnh' : undefined}
                   >
+                    {medal && <Crown />}
                     <span className="seat-no">{seat + 1}</span>
                     <span className="seat-name">{name}</span>
                   </button>
