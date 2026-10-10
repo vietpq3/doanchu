@@ -28,7 +28,8 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: 'npm run preview -- --port 3000',
+        // --persist-to + xóa thư mục: mỗi lần chạy e2e bắt đầu với Durable Object (các room đấu theo nhóm) trống, không dính dữ liệu lần trước
+        command: 'rm -rf .wrangler/e2e-state && npm run preview -- --port 3000 --persist-to .wrangler/e2e-state',
         url: 'http://localhost:3000/icon.svg',
         reuseExistingServer: true,
         timeout: 240_000,

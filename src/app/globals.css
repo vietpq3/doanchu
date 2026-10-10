@@ -220,3 +220,68 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 16px; display: flex; flex-direction: column; gap: 12px; }
 .panel h2 { margin: 0; font-size: 1.25rem; }
 .panel p { margin: 0; color: var(--muted); }
+
+/* ---------- Đấu theo nhóm (docs/versus-v2.md) ---------- */
+.versus-entry { margin-top: 2px; padding-top: 12px; border-top: 1px solid var(--border); }
+.versus-entry-row { display: flex; gap: 8px; }
+.versus-name {
+  flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 2px solid var(--cell-filled); border-radius: 10px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 1rem;
+}
+.versus-name::placeholder { color: var(--muted); }
+.versus-name:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.versus-name[aria-invalid="true"] { border-color: var(--accent); }
+.versus-btn { min-height: 44px; padding: 0 16px; border-radius: 10px; font-size: .95rem; white-space: nowrap; }
+.versus-error { margin: 6px 0 0; min-height: 1.3em; font-size: .85rem; color: var(--accent); font-weight: 600; }
+
+.topbar .wrap > .back-btn { justify-self: start; }
+.topbar-right { justify-self: end; display: inline-flex; align-items: center; }
+.leave-btn { padding: 6px 10px; font-size: .9rem; }
+.notice { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: .92rem; }
+
+.room-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.room-card {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 16px; text-decoration: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.room-card:hover { border-color: var(--accent); }
+.room-name { font-weight: 800; font-size: 1.1rem; }
+.room-info { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .9rem; }
+.room-badge { padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: .78rem; background: var(--surface-2); color: var(--text); }
+.room-badge.playing { background: var(--c-present); color: #fff; }
+
+.section-title { margin: 0 0 8px; font-size: 1rem; }
+.name-tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.name-tag { padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: .85rem; font-weight: 600; overflow-wrap: anywhere; }
+.name-tag.you { border-color: var(--accent); color: var(--accent); }
+.lock-badge { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--c-absent); color: #fff; font-size: .72rem; font-weight: 700; vertical-align: middle; }
+
+.seats { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.seat {
+  width: 100%; min-height: 64px; padding: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border: 2px dashed var(--cell-border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer;
+}
+.seat.empty:not(:disabled):hover { border-color: var(--accent); }
+.seat.taken { border-style: solid; border-color: var(--cell-filled); }
+.seat.taken.you { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.seat:disabled { cursor: default; }
+.seat.empty:disabled { opacity: .7; }
+.seat-no { font-size: .72rem; color: var(--muted); }
+.seat-name { font-weight: 700; font-size: .92rem; overflow-wrap: anywhere; text-align: center; }
+.seat-hint { font-size: .8rem; color: var(--muted); }
+.last-result { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: .9rem; }
+.last-result h3 { margin: 0 0 4px; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.last-result p { margin: 0; }
+.last-result .defs { margin-top: 10px; }
+.last-result .source-note { margin-top: 10px; }
+.endgame .answer-label { margin-top: 4px; }
+.start-btn { width: 100%; min-height: 52px; border-radius: 12px; font-size: 1.05rem; }
+
+.opponents { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.opponent { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: .8rem; font-weight: 600; overflow-wrap: anywhere; }
+.opponent.you { border-color: var(--accent); }
+.opponent.won { background: var(--c-correct); border-color: var(--c-correct); color: #fff; }
+.opponent.out, .opponent.left { opacity: .6; }
+.result-text { margin: 0 0 12px; font-size: 1.05rem; line-height: 1.5; text-align: center; }
+.result-head { display: block; font-size: 1.5rem; margin-bottom: 4px; }
+.endgame.won .result-head { color: var(--c-correct); }

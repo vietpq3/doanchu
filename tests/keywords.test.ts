@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { KEYWORD_LETTERS, MAX_KEYWORD_NO, buildShareLink, keywordInfo, parseKeywordNo } from '@/lib/game/keywords';
 import { normalizeWord } from '@/lib/game/vietnamese';
+import { createSyllableValidator, isValidSyllable } from '@/lib/versus/syllable';
 import { loadExclusionConfig } from '../scripts/keyword-exclusions';
 
 describe('mục từ nào làm được từ khóa', () => {
@@ -109,5 +110,32 @@ describe('data/keywords.json', () => {
     expect(new Set(auxiliaryList).size).toBe(auxiliaryList.length);
     expect(auxiliaryList.filter((w) => !wordSet.has(w))).toEqual([]); // đều là từ khóa, không có từ đã bị loại
     for (const w of ['nhẵn bóng', 'hữu danh']) expect(auxiliaryList, w).toContain(w);
+  });
+});
+
+describe('data/syllables.txt (âm tiết ngoại lệ, kiểm tra lượt đoán đấu theo nhóm)', () => {
+  const lines = fs.readFileSync('data/syllables.txt', 'utf8').trim().split('\n');
+  const file = JSON.parse(fs.readFileSync('data/keywords.json', 'utf8')) as { words: string[]; excluded: Record<string, string> };
+  const valid = createSyllableValidator(lines.join('\n'));
+
+  test('mỗi dòng là một âm tiết đã chuẩn hoá, không trùng, có nguyên âm và không quá 6 chữ cái', () => {
+    expect(new Set(lines).size).toBe(lines.length);
+    expect(lines.length).toBeGreaterThan(100);
+    expect(lines.filter((s) => s.includes(' ') || normalizeWord(s) !== s || !/[aăâeêioôơuưy]/.test(s) || Array.from(s).length > 6)).toEqual([]);
+  });
+
+  test('chỉ chứa âm tiết mà quy tắc cấu trúc không nhận (không thừa)', () => {
+    expect(lines.filter(isValidSyllable)).toEqual([]);
+  });
+
+  test('gần như mọi từ khóa đều là từ hợp lệ (quy tắc không chặn nhầm từ thật)', () => {
+    // Chỉ vài từ kỹ thuật/phiên âm (vd "độ ph", "tia x", "tiếng bulgari") không qua; không ảnh hưởng ván chơi vì đáp án luôn được chấp nhận.
+    expect(file.words.length).toBeGreaterThan(36000);
+    expect(file.words.filter((w) => !valid(w)).length).toBeLessThan(40);
+  });
+
+  test('chặn chuỗi vô nghĩa (vd ví dụ loại trừ chữ cái trong yêu cầu), nhận từ lạ nhưng đúng cấu trúc', () => {
+    for (const w of ['aêơ yiư', 'aê yiư', 'chiơ', 'xyz abc', 'qqq qq']) expect(valid(w), w).toBe(false);
+    for (const w of ['tượi', 'con gà', 'ba mơi', 'hòa bình']) expect(valid(w), w).toBe(true);
   });
 });

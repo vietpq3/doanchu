@@ -11,6 +11,7 @@ import EndgameDialog from './EndgameDialog';
 import HelpDialog from './HelpDialog';
 import KeywordDialog from './KeywordDialog';
 import LetterStrip from './LetterStrip';
+import VersusEntry from './versus/VersusEntry';
 
 const HELP_SEEN_KEY = 'doanchu-seen-help';
 const noopSubscribe = () => () => {};
@@ -248,6 +249,8 @@ export default function GameScreen({ initialGame }: { initialGame: PublicGame })
             </div>
           </div>
         )}
+
+        <VersusEntry />
       </main>
 
       <KeywordDialog
