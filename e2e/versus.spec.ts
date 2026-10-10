@@ -337,9 +337,13 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   for (const p of [a, b]) await expect(p.page.locator('.meta')).toContainText('2 âm tiết · 5 chữ cái');
   // thời gian còn lại của ván (tối đa 10 phút), chạy lùi
   const clock = a.page.locator('.time-left');
-  await expect(clock).toHaveText(/^còn (10:00|9:[0-5]\d)$/);
+  await expect(clock).toHaveText(/^còn 9:[0-5]\d$/); // "10:00" của giây đầu hiện thành "9:59"
   const first = await clock.textContent();
+  const before = (await clock.boundingBox())!;
   await expect(clock).not.toHaveText(first!, { timeout: 3000 });
+  // số đổi mỗi giây nhưng đồng hồ (căn phải) không xô lệch: vị trí và bề rộng giữ nguyên
+  const after = (await clock.boundingBox())!;
+  expect([after.x, after.width]).toEqual([before.x, before.width]);
   await expect(a.opponents).toHaveCount(2);
   await expect(b.opponents.filter({ hasText: a.name })).toContainText('lượt 0/6');
 

@@ -318,7 +318,11 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8
 .versus-result .result-head { padding: 0 36px; } /* chừa chỗ cho nút ✕ ở góc trên bên phải */
 .btn.shot-btn { border-radius: 12px; padding: 10px 16px; line-height: 1.35; font-size: .95rem; }
 .btn.shot-btn svg { width: 18px; height: 18px; flex: none; }
-.time-left b { font-variant-numeric: tabular-nums; }
+/* Đồng hồ của ván: ô rộng cố định cho từng chữ số (chữ số rộng nhất của font là 0,72em, dấu ":" 0,34em); bề rộng cả đồng hồ đặt trong VersusScreen */
+.time-left { white-space: nowrap; }
+.clock { display: inline-block; text-align: right; white-space: nowrap; }
+.clock-digit { display: inline-block; width: .72em; text-align: center; }
+.clock-sep { display: inline-block; width: .34em; text-align: center; }
 .time-left.warn, .time-left.warn b { color: var(--accent); }
 /* Sau ván, đã đóng popup kết quả: xem lại ô chữ, chụp ảnh, nút đếm ngược về phòng */
 .review-bar { display: flex; flex-direction: column; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }

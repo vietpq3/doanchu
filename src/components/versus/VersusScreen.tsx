@@ -21,6 +21,25 @@ const STATUS_TEXT: Record<MatchPlayerStatus, string> = { playing: '', won: ' · 
 /** Còn từ chừng này giây trở xuống thì đồng hồ của ván chuyển màu cảnh báo. */
 const TIME_WARN_SECONDS = 60;
 
+/** Đồng hồ hiện tối đa chừng này giây: "10:00" chỉ có trong giây đầu của ván, hiện "9:59" để đồng hồ không phải rộng thêm một chữ số. */
+const CLOCK_MAX_SHOWN = Math.floor(VERSUS.matchMaxMs / 1000) - 1;
+/** Bề rộng đồng hồ: đủ cho số chữ số của dạng dài nhất được hiện ("9:59": 3 chữ số + dấu ":"). */
+const CLOCK_WIDTH = `calc(${formatClock(CLOCK_MAX_SHOWN).replace(':', '').length} * .72em + .34em)`;
+
+/**
+ * Đồng hồ "m:ss". Font của app không có chữ số đều độ rộng (tabular-nums không có tác dụng), nên mỗi ký tự nằm trong một ô
+ * rộng cố định và đồng hồ có bề rộng cố định: số đổi mỗi giây mà khối "Lượt · còn" (căn phải) không bị xô lệch.
+ */
+function Clock({ seconds }: { seconds: number }) {
+  return (
+    <b className="clock" style={{ minWidth: CLOCK_WIDTH }}>
+      {Array.from(formatClock(Math.min(seconds, CLOCK_MAX_SHOWN)), (ch, i) => (
+        <span key={i} className={ch === ':' ? 'clock-sep' : 'clock-digit'}>{ch}</span>
+      ))}
+    </b>
+  );
+}
+
 /**
  * Màn Room versus (/rooms/[id]/versus): mỗi người đoán riêng với cùng một từ khóa. Server kiểm tra và chấm từng lượt;
  * mình chỉ thấy chữ/màu của lượt đoán của chính mình, còn đối thủ chỉ thấy tên + số lượt. Không có Hint, New game, số #N.
@@ -122,7 +141,7 @@ export default function VersusScreen() {
               <>
                 {' · '}
                 <span className={'time-left' + (matchLeft <= TIME_WARN_SECONDS ? ' warn' : '')} title="Thời gian còn lại của ván">
-                  còn <b>{formatClock(matchLeft)}</b>
+                  còn <Clock seconds={matchLeft} />
                 </span>
               </>
             )}

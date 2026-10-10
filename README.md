@@ -264,6 +264,7 @@ npm version 1.4.0 --no-git-tag-version   # hoặc chỉ định thẳng một s�
 
 Các lệnh sửa `package.json` + `package-lock.json`; số được nhúng vào code lúc build nên phải tăng **trước** `npm run deploy`. Lịch sử bên dưới ghi các thay đổi đáng chú ý; bản vá nhỏ có thể gộp thành một dòng.
 
+- **v1.3.2**: đấu theo nhóm: đồng hồ thời gian còn lại không còn làm khối `Lượt · còn` xô lệch mỗi giây (mỗi chữ số một ô rộng cố định; hiện từ `9:59`).
 - **v1.3.1**: đấu theo nhóm: đóng popup kết quả (✕/Esc) để **xem lại ô chữ** với nút đếm ngược `Về phòng (Ns)`; nút **`Chụp ảnh màn hình`** copy ảnh ô chữ của mình vào clipboard để chia sẻ; màn đấu hiện **thời gian còn lại** của ván.
 - **v1.3.0**: **trang chủ mới** (`/`) chỉ có hai ô vuông `Chơi đơn` và `Đấu theo nhóm`; Chơi đơn chuyển sang `/solo` (có nút Trang chủ); vào đấu theo nhóm: đã có tên thì vào thẳng, chưa có thì hộp thoại nhập tên có **tên gợi ý ngẫu nhiên**; đổi tên ở trang chủ và Room List; mở thẳng link phòng khi chưa có tên thì hỏi tên tại chỗ. Link chia sẻ từ khóa thành `/solo?id=N` (link cũ `/?id=N` chỉ mở trang chủ).
 - **v1.2.3**: đấu theo nhóm: bật lại kiểm tra từ đoán ở mức **hợp lệ** (không đòi có nghĩa): mọi âm tiết đúng cấu trúc tiếng Việt hoặc có trong từ điển (`tượi` hợp lệ, `chiơ` không), thông báo "Từ này không hợp lệ".
