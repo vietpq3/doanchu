@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { ApiError, postJson } from '@/lib/client/api';
 import { cellPosition } from '@/lib/game/hints';
@@ -11,7 +12,6 @@ import EndgameDialog from './EndgameDialog';
 import HelpDialog from './HelpDialog';
 import KeywordDialog from './KeywordDialog';
 import LetterStrip from './LetterStrip';
-import VersusEntry from './versus/VersusEntry';
 
 const HELP_SEEN_KEY = 'doanchu-seen-help';
 const noopSubscribe = () => () => {};
@@ -181,7 +181,15 @@ export default function GameScreen({ initialGame }: { initialGame: PublicGame })
             <span className="spacer" />
           )}
           <h1 className="brand">Đoán <span>Chữ</span></h1>
-          <button className="icon-btn" type="button" aria-label="Luật chơi" title="Luật chơi" onClick={() => setHelpRequested(true)}>?</button>
+          <span className="topbar-right">
+            <Link className="icon-btn" href="/" aria-label="Trang chủ" title="Trang chủ">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 10.5 12 3l9 7.5" />
+                <path d="M5 9v11h5v-6h4v6h5V9" />
+              </svg>
+            </Link>
+            <button className="icon-btn" type="button" aria-label="Luật chơi" title="Luật chơi" onClick={() => setHelpRequested(true)}>?</button>
+          </span>
         </div>
       </header>
 
@@ -249,8 +257,6 @@ export default function GameScreen({ initialGame }: { initialGame: PublicGame })
             </div>
           </div>
         )}
-
-        <VersusEntry />
       </main>
 
       <KeywordDialog

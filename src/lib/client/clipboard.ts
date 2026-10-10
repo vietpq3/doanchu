@@ -29,3 +29,28 @@ export async function copyToClipboard(text: string, container: HTMLElement = doc
     area.remove();
   }
 }
+
+/**
+ * Copy ảnh PNG vào clipboard; trả về false nếu trình duyệt không hỗ trợ hoặc không cho phép.
+ * Nhận Promise (không phải ảnh đã vẽ xong) và phải được gọi ngay trong lúc bấm nút: Safari chỉ cho ghi clipboard khi
+ * ClipboardItem được tạo trong thao tác của người dùng, còn ảnh thì được vẽ xong sau.
+ */
+export async function copyImageToClipboard(png: Promise<Blob>): Promise<boolean> {
+  try {
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return false;
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Tải một file về máy (dự phòng khi không copy được ảnh). */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}

@@ -6,19 +6,45 @@ import { textCells } from '@/lib/game/input';
 import { letterStatuses } from '@/lib/game/scoring';
 import { VERSUS } from '@/lib/versus/config';
 import type { MatchPlayerStatus } from '@/lib/versus/protocol';
+import { formatClock, summarizeResult } from '@/lib/versus/summary';
 import Board from '../Board';
 import LetterStrip from '../LetterStrip';
 import ResultDialog from './ResultDialog';
-import { useRoom, useRoomError } from './RoomProvider';
+import { useRoom, useRoomError, useSecondsLeft } from './RoomProvider';
+import ScreenshotButton from './ScreenshotButton';
 import VersusHeader from './VersusHeader';
 
 const GUESS_ERRORS = new Set(['bad_request', 'invalid_chars', 'incomplete', 'wrong_structure', 'invalid_word']);
 
 const STATUS_TEXT: Record<MatchPlayerStatus, string> = { playing: '', won: ' · đã đoán đúng', out: ' · hết lượt', left: ' · đã rời' };
 
+/** Còn từ chừng này giây trở xuống thì đồng hồ của ván chuyển màu cảnh báo. */
+const TIME_WARN_SECONDS = 60;
+
+/** Đồng hồ hiện tối đa chừng này giây: "10:00" chỉ có trong giây đầu của ván, hiện "9:59" để đồng hồ không phải rộng thêm một chữ số. */
+const CLOCK_MAX_SHOWN = Math.floor(VERSUS.matchMaxMs / 1000) - 1;
+/** Bề rộng đồng hồ: đủ cho số chữ số của dạng dài nhất được hiện ("9:59": 3 chữ số + dấu ":"). */
+const CLOCK_WIDTH = `calc(${formatClock(CLOCK_MAX_SHOWN).replace(':', '').length} * .72em + .34em)`;
+
+/**
+ * Đồng hồ "m:ss". Font của app không có chữ số đều độ rộng (tabular-nums không có tác dụng), nên mỗi ký tự nằm trong một ô
+ * rộng cố định và đồng hồ có bề rộng cố định: số đổi mỗi giây mà khối "Lượt · còn" (căn phải) không bị xô lệch.
+ */
+function Clock({ seconds }: { seconds: number }) {
+  return (
+    <b className="clock" style={{ minWidth: CLOCK_WIDTH }}>
+      {Array.from(formatClock(Math.min(seconds, CLOCK_MAX_SHOWN)), (ch, i) => (
+        <span key={i} className={ch === ':' ? 'clock-sep' : 'clock-digit'}>{ch}</span>
+      ))}
+    </b>
+  );
+}
+
 /**
  * Màn Room versus (/rooms/[id]/versus): mỗi người đoán riêng với cùng một từ khóa. Server kiểm tra và chấm từng lượt;
  * mình chỉ thấy chữ/màu của lượt đoán của chính mình, còn đối thủ chỉ thấy tên + số lượt. Không có Hint, New game, số #N.
+ * Trong ván có đồng hồ thời gian còn lại. Ván xong: popup kết quả đếm ngược tới lúc phòng mở lại; đóng popup thì xem lại ô chữ,
+ * nút đếm ngược `Về phòng (Ns)` và nút chụp ảnh chuyển xuống dưới ô chữ. Hết đếm ngược thì tự về Inside Room.
  */
 export default function VersusScreen() {
   const router = useRouter();
@@ -38,6 +64,16 @@ export default function VersusScreen() {
   }, [view, roomId, router]);
 
   const toInside = useCallback(() => router.replace(`/rooms/${roomId}`), [router, roomId]);
+
+  const result = game?.result ?? null;
+  // người chơi đã đóng popup kết quả để xem lại ô chữ
+  const [reviewing, setReviewing] = useState(false);
+  // thời gian còn lại của ván, và (sau ván) tới lúc phòng mở lại — theo giờ server
+  const matchLeft = useSecondsLeft(game && !result ? game.endsAt : null, view?.serverNow ?? 0);
+  const lockLeft = useSecondsLeft(result ? (view?.lockedUntil ?? null) : null, view?.serverNow ?? 0);
+  useEffect(() => {
+    if (result && lockLeft === 0) toInside();
+  }, [result, lockLeft, toInside]);
 
   // Có lượt mới được chấm: xóa chữ trong ô nhập (giữ nguyên focus để bàn phím không bị đóng).
   useEffect(() => {
@@ -99,7 +135,17 @@ export default function VersusScreen() {
 
         <p className="meta">
           <span>Từ khóa: <b>{game.structure.length} âm tiết · {totalLetters} chữ cái</b></span>
-          <span>Lượt <b>{Math.min(rowCount + 1, game.maxTurns)}/{game.maxTurns}</b></span>
+          <span>
+            Lượt <b>{Math.min(rowCount + 1, game.maxTurns)}/{game.maxTurns}</b>
+            {matchLeft !== null && (
+              <>
+                {' · '}
+                <span className={'time-left' + (matchLeft <= TIME_WARN_SECONDS ? ' warn' : '')} title="Thời gian còn lại của ván">
+                  còn <Clock seconds={matchLeft} />
+                </span>
+              </>
+            )}
+          </span>
         </p>
 
         <ul className="opponents" aria-label="Người chơi trong ván">
@@ -144,9 +190,17 @@ export default function VersusScreen() {
             </p>
             <LetterStrip statuses={letters} />
           </div>
+        ) : result && reviewing ? (
+          <div className="review-bar">
+            <p className="review-text">{summarizeResult(game)}</p>
+            <div className="review-actions">
+              <ScreenshotButton game={game} roomName={view.roomName} />
+              <button className="btn" type="button" onClick={toInside}>Về phòng ({lockLeft ?? 0}s)</button>
+            </div>
+          </div>
         ) : (
           <div className="notice" role="status">
-            {game.result
+            {result
               ? 'Ván đã kết thúc.'
               : done
                 ? 'Bạn đã hết lượt đoán. Đang chờ những người khác…'
@@ -155,7 +209,9 @@ export default function VersusScreen() {
         )}
       </main>
 
-      {game.result && <ResultDialog game={game} lockedUntil={view.lockedUntil} serverNow={view.serverNow} onOk={toInside} />}
+      {result && !reviewing && (
+        <ResultDialog game={game} roomName={view.roomName} secondsLeft={lockLeft} onOk={toInside} onDismiss={() => setReviewing(true)} />
+      )}
     </>
   );
 }

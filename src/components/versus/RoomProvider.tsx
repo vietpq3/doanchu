@@ -60,7 +60,7 @@ export function RoomProvider({ roomId, children }: { roomId: number; children: R
   useEffect(() => {
     const name = sanitizeName(getSavedName());
     if (!name) {
-      router.replace('/'); // chưa có tên: về Chơi đơn để nhập
+      router.replace('/'); // phòng hờ: NameGate đã hỏi tên trước khi dựng RoomProvider
       return;
     }
     let closedByUs = false;
@@ -150,7 +150,8 @@ export function useSecondsLeft(endsAt: number | null, serverNow: number): number
       clearInterval(interval);
     };
   }, [endsAt, clockOffset]);
-  return endsAt === null ? null : Math.max(0, Math.ceil((endsAt - now) / 1000));
+  // `now` có thể còn cũ ở lần vẽ đầu (vd tải lại trang: serverNow lúc đầu là 0); giờ server mới nhất chặn dưới để không hiện số khổng lồ
+  return endsAt === null ? null : Math.max(0, Math.ceil((endsAt - Math.max(now, serverNow)) / 1000));
 }
 
 /**
