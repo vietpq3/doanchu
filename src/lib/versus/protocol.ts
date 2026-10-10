@@ -3,6 +3,7 @@
  * Dùng chung cho worker và giao diện. Quy tắc quan trọng: RoomView KHÔNG BAO GIỜ chứa đáp án hay chữ của lượt đoán
  * người khác trước khi ván kết thúc (có test kiểm tra).
  */
+import { parseDifficulty, type Difficulty } from '../game/difficulty';
 import type { ScoredRow } from '../game/scoring';
 import type { Definition } from '../game/types';
 import { VERSUS } from './config';
@@ -25,6 +26,8 @@ export interface LastResult {
 export interface GameView {
   structure: number[];
   maxTurns: number;
+  /** độ khó của ván (người bấm Start chọn) */
+  difficulty: Difficulty;
   startedAt: number;
   endsAt: number;
   /** các lượt đoán của chính bạn (chữ + màu) */
@@ -53,6 +56,8 @@ export interface RoomView {
   /** bạn đang ngồi bàn, phòng đang rảnh và có đủ người để bấm Start */
   canStart: boolean;
   countdownEndsAt: number | null;
+  /** độ khó của ván sắp bắt đầu (đang đếm ngược) hoặc đang đấu; null khi phòng đang rảnh */
+  difficulty: Difficulty | null;
   lockedUntil: number | null;
   lastResult: LastResult | null;
   /** chỉ có khi bạn là người tham gia ván đang diễn ra hoặc vừa kết thúc */
@@ -77,8 +82,11 @@ export interface ChatMessage {
 export type ClientMessage =
   | { type: 'sit'; seat: number }
   | { type: 'stand' }
-  /** `word`: chọn sẵn từ khóa, chỉ có tác dụng khi server bật REVIEW_MODE (để kiểm thử) */
-  | { type: 'start'; word?: string | undefined }
+  /**
+   * `difficulty`: độ khó người bấm Start chọn (mặc định Thường); `word`: chọn sẵn từ khóa, chỉ có tác dụng khi server bật
+   * REVIEW_MODE (để kiểm thử)
+   */
+  | { type: 'start'; difficulty?: Difficulty | undefined; word?: string | undefined }
   | { type: 'leave' }
   | { type: 'guess'; guess: string }
   | { type: 'chat'; text: string };
@@ -140,8 +148,10 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       return typeof m.seat === 'number' && Number.isInteger(m.seat) && m.seat >= 0 && m.seat < VERSUS.seats ? { type: 'sit', seat: m.seat } : null;
     case 'stand':
       return { type: 'stand' };
-    case 'start':
-      return { type: 'start', ...(typeof m.word === 'string' ? { word: m.word } : {}) };
+    case 'start': {
+      const difficulty = typeof m.difficulty === 'number' ? parseDifficulty(m.difficulty) : null;
+      return { type: 'start', ...(difficulty ? { difficulty } : {}), ...(typeof m.word === 'string' ? { word: m.word } : {}) };
+    }
     case 'leave':
       return { type: 'leave' };
     case 'guess':

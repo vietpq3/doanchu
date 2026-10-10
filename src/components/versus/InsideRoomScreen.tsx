@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { currentDifficulty, useDifficulty } from '@/lib/client/difficulty';
+import { difficultyName } from '@/lib/game/difficulty';
 import { VERSUS } from '@/lib/versus/config';
 import type { RoomView } from '@/lib/versus/protocol';
 import DefinitionList from '../DefinitionList';
@@ -32,6 +34,7 @@ function reviewWordFromUrl(): string | undefined {
 export default function InsideRoomScreen() {
   const router = useRouter();
   const { roomId, view, status, fatal, send, leave } = useRoom();
+  const savedDifficulty = useDifficulty();
   const secondsLeft = useSecondsLeft(view?.countdownEndsAt ?? null, view?.serverNow ?? 0);
 
   // Ván bắt đầu và mình ở trong ván: sang màn Versus.
@@ -131,9 +134,21 @@ export default function InsideRoomScreen() {
           </ol>
         </section>
 
-        <button className="btn start-btn" type="button" disabled={!view.canStart} onClick={() => send({ type: 'start', word: reviewWordFromUrl() })}>
+        <button
+          className="btn start-btn"
+          type="button"
+          disabled={!view.canStart}
+          onClick={() => send({ type: 'start', difficulty: currentDifficulty(), word: reviewWordFromUrl() })}
+        >
           {startLabel(view, secondsLeft)}
         </button>
+        <p className="input-hint difficulty-hint">
+          {view.difficulty !== null ? (
+            <>Độ khó ván này: <b>{difficultyName(view.difficulty)}</b></>
+          ) : savedDifficulty !== null ? (
+            <>Bấm Start thì ván dùng độ khó của bạn: <b>{difficultyName(savedDifficulty)}</b> (đổi ở menu ☰)</>
+          ) : null}
+        </p>
         <p className="input-hint">
           {view.youSeat === null
             ? 'Bấm vào một ô trống ở Bàn chơi để tham gia đấu. Cần từ 2 người trở lên để Start.'

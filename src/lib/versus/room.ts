@@ -6,6 +6,7 @@
  * Các pha: idle (chờ) → countdown (đếm ngược Start) → starting (đã khóa bàn, đang chọn từ khóa, bất đồng bộ)
  *          → playing (đang đấu) → locked (ván vừa xong, phòng khóa vài giây) → idle.
  */
+import { DEFAULT_DIFFICULTY, type Difficulty } from '../game/difficulty';
 import { evaluateGuess } from '../game/guess';
 import type { Status } from '../game/scoring';
 import type { Definition } from '../game/types';
@@ -37,6 +38,8 @@ export interface Match {
   /** giải nghĩa đáp án (lấy sẵn lúc bắt đầu ván): CHỈ gửi cho người chơi khi ván kết thúc */
   definitions: Definition[];
   structure: number[];
+  /** độ khó người bấm Start chọn */
+  difficulty: Difficulty;
   startedAt: number;
   endsAt: number;
   players: MatchPlayer[];
@@ -58,6 +61,8 @@ export interface RoomState {
   phase: Phase;
   players: RoomPlayer[];
   countdownEndsAt: number | null;
+  /** độ khó người bấm Start chọn cho ván sắp bắt đầu (pha countdown, starting) */
+  difficulty: Difficulty;
   lockedUntil: number | null;
   match: Match | null;
   lastResult: LastResult | null;
@@ -113,7 +118,9 @@ export class RoomMachine {
    * Riêng đáp án luôn được chấp nhận.
    */
   constructor(public state: RoomState, private readonly isValidWord: (word: string) => boolean) {
-    // Trạng thái do bản cũ lưu (trước khi có giải nghĩa, chat) chưa có các trường này.
+    // Trạng thái do bản cũ lưu (trước khi có giải nghĩa, chat, độ khó) chưa có các trường này.
+    state.difficulty ??= DEFAULT_DIFFICULTY;
+    if (state.match) state.match.difficulty ??= DEFAULT_DIFFICULTY;
     if (state.match) state.match.definitions ??= [];
     if (state.lastResult) state.lastResult.definitions ??= [];
     state.chat ??= [];
@@ -122,7 +129,10 @@ export class RoomMachine {
 
   static create(roomId: number, isValidWord: (word: string) => boolean): RoomMachine {
     return new RoomMachine(
-      { roomId, phase: 'idle', players: [], countdownEndsAt: null, lockedUntil: null, match: null, lastResult: null, reviewWord: null, chat: [], chatSeq: 0 },
+      {
+        roomId, phase: 'idle', players: [], countdownEndsAt: null, difficulty: DEFAULT_DIFFICULTY, lockedUntil: null, match: null, lastResult: null,
+        reviewWord: null, chat: [], chatSeq: 0,
+      },
       isValidWord,
     );
   }
@@ -274,8 +284,8 @@ export class RoomMachine {
     this.state.reviewWord = null;
   }
 
-  /** Bấm Start: ai đang ngồi bàn cũng bấm được khi có từ 2 người trở lên. Bắt đầu đếm ngược. */
-  start(id: string, now: number, reviewWord?: string): ActionResult {
+  /** Bấm Start: ai đang ngồi bàn cũng bấm được khi có từ 2 người trở lên. Bắt đầu đếm ngược; ván dùng độ khó của người bấm. */
+  start(id: string, now: number, reviewWord?: string, difficulty: Difficulty = DEFAULT_DIFFICULTY): ActionResult {
     const p = this.find(id);
     if (!p) return fail('unknown_player', 'Bạn chưa ở trong phòng');
     const phase = this.state.phase;
@@ -285,6 +295,7 @@ export class RoomMachine {
     if (this.seated().length < VERSUS.minPlayersToStart) return fail('not_enough_players', 'Cần ít nhất 2 người ở bàn chơi');
     this.state.phase = 'countdown';
     this.state.countdownEndsAt = now + VERSUS.countdownMs;
+    this.state.difficulty = difficulty;
     this.state.reviewWord = reviewWord ?? null;
     return ok;
   }
@@ -293,9 +304,9 @@ export class RoomMachine {
 
   /**
    * Xử lý mọi mốc thời gian đã tới hạn (gọi khi alarm kêu). `needAnswer`: đếm ngược đã xong, bàn đã khóa;
-   * caller phải chọn từ khóa rồi gọi beginMatch() (hoặc failStart() nếu không chọn được).
+   * caller phải chọn từ khóa theo `difficulty` rồi gọi beginMatch() (hoặc failStart() nếu không chọn được).
    */
-  tick(now: number): { needAnswer: boolean; reviewWord: string | null } {
+  tick(now: number): { needAnswer: boolean; reviewWord: string | null; difficulty: Difficulty } {
     const s = this.state;
     let needAnswer = false;
     if (s.phase === 'countdown' && s.countdownEndsAt !== null && now >= s.countdownEndsAt) {
@@ -319,7 +330,7 @@ export class RoomMachine {
       s.lockedUntil = null;
       s.match = null;
     }
-    return { needAnswer, reviewWord: s.reviewWord };
+    return { needAnswer, reviewWord: s.reviewWord, difficulty: s.difficulty };
   }
 
   /** Thời điểm sớm nhất cần được đánh thức (để đặt alarm); null = không cần. */
@@ -354,6 +365,7 @@ export class RoomMachine {
       answer: info.word,
       definitions,
       structure: info.structure,
+      difficulty: s.difficulty,
       startedAt: now,
       endsAt: now + VERSUS.matchMaxMs,
       players: seated.map((p) => ({ id: p.id, name: p.name, guesses: [], status: 'playing' as const })),
@@ -431,6 +443,7 @@ export class RoomMachine {
       game = {
         structure: match.structure,
         maxTurns: VERSUS.maxTurns,
+        difficulty: match.difficulty,
         startedAt: match.startedAt,
         endsAt: match.endsAt,
         yourRows: mp.guesses.map((g) => ({ cells: g.cells, statuses: g.statuses })),
@@ -453,6 +466,7 @@ export class RoomMachine {
       seats,
       canStart: s.phase === 'idle' && me.seat !== null && this.seated().length >= VERSUS.minPlayersToStart,
       countdownEndsAt: s.countdownEndsAt,
+      difficulty: s.phase === 'countdown' || s.phase === 'starting' ? s.difficulty : s.phase === 'playing' && match ? match.difficulty : null,
       lockedUntil: s.lockedUntil,
       lastResult: s.lastResult,
       game,

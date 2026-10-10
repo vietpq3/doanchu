@@ -1,7 +1,7 @@
 'use client';
 
-import { useId, useLayoutEffect } from 'react';
-import { reapplySavedTheme, setTheme, useTheme, type Theme } from '@/lib/client/theme';
+import { useId } from 'react';
+import { setTheme, useTheme, type Theme } from '@/lib/client/theme';
 
 const SunIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -21,13 +21,12 @@ const OPTIONS: { value: Theme; label: string; icon: () => React.JSX.Element }[] 
 ];
 
 /**
- * Nút chọn giao diện sáng/tối trên thanh trên cùng: hai radio button (☀ / ☾) trông như một công tắc nhỏ. Chưa chọn thì đang theo máy
- * và ô tương ứng được đánh dấu; chọn thì nhớ cho lần sau (src/lib/client/theme.ts). Dùng phím mũi tên để đổi như radio thông thường.
+ * Nút chọn giao diện sáng/tối trong menu (SettingsMenu): hai radio button (☀ / ☾) trông như một công tắc nhỏ. Chưa chọn thì đang theo
+ * máy và ô tương ứng được đánh dấu; chọn thì nhớ cho lần sau (src/lib/client/theme.ts). Dùng phím mũi tên để đổi như radio thông thường.
  */
 export default function ThemeSwitch() {
   const theme = useTheme();
   const name = useId();
-  useLayoutEffect(reapplySavedTheme, []);
   return (
     <div className="theme-switch" role="radiogroup" aria-label="Giao diện">
       {OPTIONS.map(({ value, label, icon: Icon }) => (

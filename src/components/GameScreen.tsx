@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { ApiError, postJson } from '@/lib/client/api';
+import { useDifficulty } from '@/lib/client/difficulty';
+import { DEFAULT_DIFFICULTY, difficultyName, type Difficulty } from '@/lib/game/difficulty';
 import { cellPosition } from '@/lib/game/hints';
 import { textCells } from '@/lib/game/input';
 import { letterStatuses } from '@/lib/game/scoring';
@@ -12,7 +14,7 @@ import EndgameDialog from './EndgameDialog';
 import HelpDialog from './HelpDialog';
 import KeywordDialog from './KeywordDialog';
 import LetterStrip from './LetterStrip';
-import ThemeSwitch from './ThemeSwitch';
+import SettingsMenu from './SettingsMenu';
 
 const HELP_SEEN_KEY = 'doanchu-seen-help';
 const noopSubscribe = () => () => {};
@@ -27,12 +29,28 @@ const DEFAULT_HINT = 'Gõ bằng bộ gõ tiếng Việt của máy; các âm ti
 /** Chờ một chút để người chơi thấy lượt cuối được tô màu rồi mới hiện màn kết thúc. */
 const ENDGAME_DELAY_MS = 700;
 
+const NEW_GAME_NOTE = 'Đổi độ khó sẽ bắt đầu ván mới với từ khóa của độ khó đó.';
+
+/** Dòng giải thích độ khó trong menu: đổi độ khó thì bỏ ván đang chơi và bắt đầu ván mới (như New game). */
+function difficultyNote(game: PublicGame, saved: Difficulty | null): string {
+  if (game.difficulty === null) {
+    const how = game.keywordNo !== null ? `chọn từ khóa theo số #${game.keywordNo}` : 'dùng từ khóa chọn sẵn';
+    return `Ván này ${how}. ${NEW_GAME_NOTE}`;
+  }
+  // ván đang dở từ trước khi đổi độ khó ở trang chủ: menu hiện độ khó đã chọn, ván này vẫn là độ khó cũ
+  if (!game.over && saved !== null && saved !== game.difficulty) {
+    return `Ván đang chơi là ván ${difficultyName(game.difficulty)}; bấm New game để chơi ván ${difficultyName(saved)}. ${NEW_GAME_NOTE}`;
+  }
+  return NEW_GAME_NOTE;
+}
+
 /**
  * Màn chơi. Trình duyệt chỉ hiển thị: chữ có dấu do bộ gõ của máy gõ vào ô nhập thật,
  * mỗi lần bấm Đoán thì gửi nguyên chữ đó lên server; server kiểm tra, chấm màu và trả trạng thái ván.
  */
 export default function GameScreen({ initialGame }: { initialGame: PublicGame }) {
   const [game, setGame] = useState(initialGame);
+  const savedDifficulty = useDifficulty();
   const [text, setText] = useState('');
   const [busy, setBusyState] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
@@ -183,7 +201,6 @@ export default function GameScreen({ initialGame }: { initialGame: PublicGame })
           )}
           <h1 className="brand">Đoán <span>Chữ</span></h1>
           <span className="topbar-right">
-            <ThemeSwitch />
             <Link className="icon-btn" href="/" aria-label="Trang chủ" title="Trang chủ">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M3 10.5 12 3l9 7.5" />
@@ -191,6 +208,7 @@ export default function GameScreen({ initialGame }: { initialGame: PublicGame })
               </svg>
             </Link>
             <button className="icon-btn" type="button" aria-label="Luật chơi" title="Luật chơi" onClick={() => setHelpRequested(true)}>?</button>
+            <SettingsMenu note={difficultyNote(game, savedDifficulty)} onDifficultyChange={newGame} />
           </span>
         </div>
       </header>
@@ -201,7 +219,10 @@ export default function GameScreen({ initialGame }: { initialGame: PublicGame })
         </div>
         <p className="meta">
           <span>Từ khóa: <b>{game.structure.length} âm tiết · {totalLetters} chữ cái</b></span>
-          {game.over ? <span>Ván đã kết thúc</span> : <span>Lượt <b>{game.rows.length + 1}/{game.maxTurns}</b></span>}
+          <span>
+            {game.difficulty !== null && <><b>{difficultyName(game.difficulty)}</b> · </>}
+            {game.over ? 'Ván đã kết thúc' : <>Lượt <b>{game.rows.length + 1}/{game.maxTurns}</b></>}
+          </span>
         </p>
 
         <div onClick={() => inputRef.current?.focus()}>
@@ -264,7 +285,8 @@ export default function GameScreen({ initialGame }: { initialGame: PublicGame })
       <KeywordDialog
         open={keywordOpen}
         current={game.keywordNo}
-        count={game.keywordCount}
+        difficulty={savedDifficulty ?? DEFAULT_DIFFICULTY}
+        count={game.keywordCounts[(savedDifficulty ?? DEFAULT_DIFFICULTY) - 1]}
         busy={busy}
         onStart={startWithKeyword}
         onClose={() => setKeywordOpen(false)}

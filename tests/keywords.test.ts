@@ -4,6 +4,7 @@ import { KEYWORD_LETTERS, MAX_KEYWORD_NO, buildShareLink, keywordInfo, parseKeyw
 import { normalizeWord } from '@/lib/game/vietnamese';
 import { createSyllableValidator, isValidSyllable } from '@/lib/versus/syllable';
 import { loadExclusionConfig } from '../scripts/keyword-exclusions';
+import { loadBlocklist } from '../scripts/word-blocklist';
 
 describe('mục từ nào làm được từ khóa', () => {
   test('từ ghép viết thường, 4–12 chữ cái', () => {
@@ -110,6 +111,49 @@ describe('data/keywords.json', () => {
     expect(new Set(auxiliaryList).size).toBe(auxiliaryList.length);
     expect(auxiliaryList.filter((w) => !wordSet.has(w))).toEqual([]); // đều là từ khóa, không có từ đã bị loại
     for (const w of ['nhẵn bóng', 'hữu danh']) expect(auxiliaryList, w).toContain(w);
+  });
+});
+
+describe('data/word-blocklist.txt (từ thô tục... bị xóa khỏi CSDL)', () => {
+  const blocklist = loadBlocklist();
+  const file = JSON.parse(fs.readFileSync('data/keywords.json', 'utf8')) as { words: string[]; excluded: Record<string, string> };
+
+  test('có từ thô tục rõ ràng; không có từ thường bị nhóm AI xếp nhầm', () => {
+    expect(blocklist.size).toBeGreaterThan(200);
+    for (const w of ['địt mẹ', 'đụ má', 'bú cặc', 'vãi lồn', 'mại dâm', 'hiếp dâm']) expect(blocklist.has(w), w).toBe(true);
+    for (const w of ['đê mạt', 'chửi bới', 'ngoại tình', 'khốn nạn', 'vú sữa', 'dái tai', 'đái tháo đường']) expect(blocklist.has(w), w).toBe(false);
+  });
+
+  test('không còn trong bộ từ khóa, kể cả mục excluded', () => {
+    expect(file.words.filter((w) => blocklist.has(w))).toEqual([]);
+    expect(Object.keys(file.excluded).filter((w) => blocklist.has(w))).toEqual([]);
+  });
+});
+
+describe('data/keyword-tiers.json (mức từng từ, cho độ khó)', () => {
+  const { meta, levels } = JSON.parse(fs.readFileSync('data/keyword-tiers.json', 'utf8')) as {
+    meta: { counts: Record<string, number> };
+    levels: Record<'1' | '2' | '3', string[]>;
+  };
+  const words = (JSON.parse(fs.readFileSync('data/keywords.json', 'utf8')) as { words: string[] }).words;
+  const tierOf = new Map(Object.entries(levels).flatMap(([t, ws]) => ws.map((w) => [w, Number(t)] as const)));
+
+  test('mỗi từ một mức, số lượng khớp meta, không có từ trong danh sách xóa', () => {
+    const all = Object.values(levels).flat();
+    expect(new Set(all).size).toBe(all.length);
+    expect(Object.fromEntries(Object.entries(levels).map(([t, ws]) => [t, ws.length]))).toEqual(meta.counts);
+    const blocklist = loadBlocklist();
+    expect(all.filter((w) => blocklist.has(w))).toEqual([]);
+  });
+
+  test('mọi từ khóa đều đã xếp mức; mức 1 đủ lớn để chơi lâu dài', () => {
+    expect(words.filter((w) => !tierOf.has(w)).slice(0, 10)).toEqual([]);
+    expect(words.filter((w) => tierOf.get(w) === 1).length).toBeGreaterThan(10000);
+  });
+
+  test('từ quen thuộc ở mức 1; từ thường bị AI xếp nhầm nhóm thô tục đã được sửa mức (scripts/vocab-review/overrides.tsv)', () => {
+    for (const w of ['xe máy', 'vũ trụ', 'tương tác', 'chửi bới', 'ngoại tình']) expect(tierOf.get(w), w).toBe(1);
+    expect(tierOf.get('đê mạt')).toBe(2);
   });
 });
 

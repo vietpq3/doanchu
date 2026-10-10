@@ -3,6 +3,7 @@
  * (bảng words). Dùng secret key nên chỉ chạy ở worker.
  */
 import { VERSUS } from '../src/lib/versus/config';
+import type { Difficulty } from '../src/lib/game/difficulty';
 import type { Definition } from '../src/lib/game/types';
 
 export interface KeywordEnv {
@@ -11,8 +12,8 @@ export interface KeywordEnv {
   SUPABASE_SECRET_KEY?: string;
 }
 
-/** Từ khóa ngẫu nhiên; null nếu không chọn được (thiếu cấu hình, Supabase lỗi hoặc bộ từ khóa trống). */
-export async function pickRandomKeyword(env: KeywordEnv): Promise<string | null> {
+/** Từ khóa ngẫu nhiên theo độ khó; null nếu không chọn được (thiếu cấu hình, Supabase lỗi hoặc bộ từ khóa trống). */
+export async function pickRandomKeyword(env: KeywordEnv, difficulty: Difficulty): Promise<string | null> {
   const url = env.SUPABASE_URL ?? env.NEXT_PUBLIC_SUPABASE_URL;
   const key = env.SUPABASE_SECRET_KEY;
   if (!url || !key) {
@@ -23,7 +24,7 @@ export async function pickRandomKeyword(env: KeywordEnv): Promise<string | null>
     const res = await fetch(`${url}/rest/v1/rpc/pick_keyword`, {
       method: 'POST',
       headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify({ difficulty }),
     });
     if (!res.ok) {
       console.error(`pick_keyword lỗi ${res.status}`);

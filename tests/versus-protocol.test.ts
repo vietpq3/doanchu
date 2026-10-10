@@ -48,6 +48,7 @@ describe('tin nhắn từ client', () => {
     expect(parse({ type: 'stand' })).toEqual({ type: 'stand' });
     expect(parse({ type: 'start' })).toEqual({ type: 'start' });
     expect(parse({ type: 'start', word: 'vũ trụ' })).toEqual({ type: 'start', word: 'vũ trụ' });
+    expect(parse({ type: 'start', difficulty: 3 })).toEqual({ type: 'start', difficulty: 3 });
     expect(parse({ type: 'leave' })).toEqual({ type: 'leave' });
     expect(parse({ type: 'guess', guess: 'vũ trụ' })).toEqual({ type: 'guess', guess: 'vũ trụ' });
     expect(parse({ type: 'chat', text: 'Chào cả nhà!' })).toEqual({ type: 'chat', text: 'Chào cả nhà!' });
@@ -77,6 +78,7 @@ describe('tin nhắn từ client', () => {
 
   test('trường thừa/word không phải chuỗi không làm hỏng lệnh', () => {
     expect(parse({ type: 'start', word: 5 })).toEqual({ type: 'start' });
+    for (const difficulty of [0, 4, 1.5, '2', null, 'khó']) expect(parse({ type: 'start', difficulty })).toEqual({ type: 'start' }); // độ khó lạ: bỏ qua
     expect(parse({ type: 'stand', extra: 1 })).toEqual({ type: 'stand' });
   });
 });

@@ -252,10 +252,23 @@ test('lượt không hợp lệ không mất lượt; hết 6 lượt cả hai t
   test.skip(!(await reviewModeEnabled(base(testInfo))), 'REVIEW_MODE đang tắt: không chọn sẵn được từ khóa');
   test.setTimeout(90_000);
   const { a, b } = await twoAtTable(browser, base(testInfo), 4, `/rooms/4?tu=${encodeURIComponent(WORD)}`);
+  // độ khó: người bấm Start chọn (ở menu); ai trong phòng cũng thấy lúc đếm ngược; đang đấu thì menu khóa
+  const difficultyRadio = (p: Player, name: string) => p.page.locator('.settings-panel').getByRole('radio', { name: new RegExp(`^${name}`) });
+  await expect(a.page.locator('.difficulty-hint')).toContainText('độ khó của bạn: Thường');
+  await a.page.getByRole('button', { name: 'Menu' }).click();
+  await difficultyRadio(a, 'Rất khó').check();
+  await a.page.keyboard.press('Escape');
+  await expect(a.page.locator('.difficulty-hint')).toContainText('độ khó của bạn: Rất khó');
   await a.start.click();
+  await expect(b.page.locator('.difficulty-hint')).toHaveText('Độ khó ván này: Rất khó');
   await expect(a.page).toHaveURL(/\/rooms\/4\/versus$/, { timeout: 15_000 });
   await expect(b.page).toHaveURL(/\/rooms\/4\/versus$/);
   await expect(a.page.locator('.meta')).toContainText('2 âm tiết · 5 chữ cái');
+  await expect(b.page.locator('.meta')).toContainText('Rất khó · Lượt 1/6');
+  await b.page.getByRole('button', { name: 'Menu' }).click();
+  await expect(difficultyRadio(b, 'Rất khó')).toBeChecked(); // độ khó của ván, không phải của b (Thường)
+  for (const name of ['Thường', 'Khó', 'Rất khó']) await expect(difficultyRadio(b, name)).toBeDisabled();
+  await b.page.keyboard.press('Escape');
 
   // lượt thiếu chữ: báo lỗi, không có hàng nào được chấm, không mất lượt
   await a.guess('ba');

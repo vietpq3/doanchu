@@ -1,0 +1,60 @@
+# Sửa tay mức của AI (merge.ts áp dụng khi ghi data/keyword-tiers.json). Mỗi dòng: từ<TAB>mức<TAB>ghi chú
+# Các từ AI xếp nhóm "Thô tục, nhạy cảm" (mức 3) nhưng thực ra là từ thường, không thô tục: giữ lại và xếp mức đúng.
+# Các từ còn lại của nhóm đó nằm trong data/word-blocklist.txt (bị xóa khỏi CSDL).
+đê mạt	2	hán việt, chỉ tính cách
+đốn mạt	2	chỉ tính cách
+đểu cáng	1	chỉ tính cách
+láo xược	1	chỉ tính cách
+mất dạy	1	chỉ tính cách
+khốn nạn	1	chỉ tính cách
+vô sỉ	2	hán việt, chỉ tính cách
+bố lếu bố láo	2	thành ngữ
+nhãi nhép	2	khẩu ngữ
+ranh con	2	khẩu ngữ
+con ranh	2	tín ngưỡng dân gian
+nặc nô	2	khẩu ngữ
+súc sinh	2	hán việt
+chửi bới	1	thông dụng
+chửi nhau	1	thông dụng
+chửi rủa	1	thông dụng
+chửi thề	1	thông dụng
+chửi đổng	2	khẩu ngữ
+chửi lộn	2	phương ngữ
+chửi tục	2	khẩu ngữ
+lăng mạ	1	thông dụng
+nhục mạ	1	thông dụng
+thống mạ	2	hán việt
+tục tĩu	1	thông dụng
+nói tục	1	thông dụng
+văng tục	1	thông dụng
+đi đời nhà ma	1	thành ngữ
+móc cua	3	cụm từ tự do
+móc lốp	3	cụm từ tự do
+cóc cần	2	khẩu ngữ
+ghẹo gái	1	thông dụng
+sàm sỡ	1	thông dụng
+lẳng lơ	1	thông dụng
+tơ mơ	2	khẩu ngữ
+ngoại tình	1	thông dụng
+cắm sừng	1	thông dụng
+khỏa thân	1	thông dụng
+lõa lồ	2	thông dụng
+tô hô	2	khẩu ngữ
+khoái cảm	1	thông dụng
+phồn thực	2	tín ngưỡng
+phòng the	2	văn chương
+mây mưa	2	văn chương
+nguyệt hoa	2	văn chương
+yến oanh	2	văn chương
+khiêu gợi	1	thông dụng
+dạ con	1	sinh học
+đi ngoài	1	thông dụng
+đi cầu	1	thông dụng
+đi đại tiện	2	lối nói lịch sự
+trung tiện	2	y học
+tháu cáy	2	khẩu ngữ
+tiểu đăng khoa	2	hán việt cũ
+nhân dục	2	hán việt
+tiết dục	2	hán việt
+chơi ngang	2	khẩu ngữ
+đi ngang về tắt	2	thành ngữ

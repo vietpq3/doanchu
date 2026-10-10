@@ -172,12 +172,12 @@ describe('gợi ý (nút Hint)', () => {
 describe('số thứ tự từ khóa (#N)', () => {
   test('ván ngẫu nhiên có số thứ tự và tổng số từ khóa; số giữ nguyên qua các lượt và khi tải lại', async () => {
     const { game } = await newGame();
-    expect(game.keywordCount).toBe(2);
+    expect(game.keywordCounts).toEqual([2, 2, 2]); // chưa xếp mức: độ khó nào cũng là toàn bộ
     expect([1, 2]).toContain(game.keywordNo);
     const rows = await guess(game.id, 'b'.repeat(game.structure[0]) + ' ' + 'b'.repeat(game.structure[1]));
-    expect(rows.body).toMatchObject({ keywordNo: game.keywordNo, keywordCount: 2 });
+    expect(rows.body).toMatchObject({ keywordNo: game.keywordNo, keywordCounts: [2, 2, 2] });
     expect((await hint(game.id)).body.keywordNo).toBe(game.keywordNo);
-    expect(await getGame(game.id)).toMatchObject({ keywordNo: game.keywordNo, keywordCount: 2 });
+    expect(await getGame(game.id)).toMatchObject({ keywordNo: game.keywordNo, keywordCounts: [2, 2, 2] });
   });
 
   test('chọn số: ra đúng từ khóa đó, lần nào cũng vậy', async () => {
@@ -200,7 +200,7 @@ describe('số thứ tự từ khóa (#N)', () => {
     const before = repo.games.size;
     const res = await createRoute.POST(request('/api/games', { number: 3 }));
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'keyword_not_found', message: 'Không có từ khóa số 3; chọn số từ 1 đến 2' });
+    expect(await res.json()).toEqual({ error: 'keyword_not_found', message: 'Độ khó Thường có từ khóa số 1 đến 2; không có số 3' });
     expect(repo.games.size).toBe(before);
   });
 
@@ -215,6 +215,91 @@ describe('số thứ tự từ khóa (#N)', () => {
   test('chọn sẵn từ khóa bằng word (REVIEW_MODE): có số nếu là từ khóa, không có số nếu chỉ là từ trong từ điển', async () => {
     expect((await newGame({ word: 'hoà bình' })).game.keywordNo).toBe(2);
     expect((await newGame({ word: 'con mèo' })).game.keywordNo).toBeNull();
+  });
+});
+
+describe('độ khó (cookie dc_difficulty, chọn ở menu)', () => {
+  const withCookie = (body: unknown, cookie?: string) =>
+    new NextRequest('http://localhost/api/games', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+    });
+  const create = async (body: unknown, cookie?: string) => (await (await createRoute.POST(withCookie(body, cookie))).json()) as PublicGame;
+
+  test('từ khóa ngẫu nhiên theo độ khó trong cookie; không có hoặc sai thì dùng Thường (1)', async () => {
+    expect((await create({}, 'dc_difficulty=2')).difficulty).toBe(2);
+    expect((await create({}, 'dc_difficulty=3')).difficulty).toBe(3);
+    expect((await create({})).difficulty).toBe(1);
+    for (const bad of ['0', '4', 'abc', '1.5', '']) expect((await create({}, `dc_difficulty=${bad}`)).difficulty, bad).toBe(1);
+    expect(repo.picks).toEqual([2, 3, 1, 1, 1, 1, 1, 1]);
+  });
+
+  test('chọn theo số #N hoặc chọn sẵn từ: không theo độ khó (difficulty = null)', async () => {
+    const byNumber = await create({ number: 2 }, 'dc_difficulty=3');
+    expect(byNumber).toMatchObject({ keywordNo: 2, difficulty: null });
+    expect((await create({ word: 'vũ trụ' }, 'dc_difficulty=3')).difficulty).toBeNull();
+    expect(repo.picks).toEqual([]);
+    expect(await getGame(byNumber.id)).toMatchObject({ difficulty: null });
+  });
+
+  test('độ khó được lưu cùng ván: tải lại vẫn thấy', async () => {
+    const game = await create({}, 'dc_difficulty=2');
+    expect(await getGame(game.id)).toMatchObject({ difficulty: 2 });
+  });
+});
+
+describe('số từ khóa theo độ khó (từ khóa đánh số theo mức trước)', () => {
+  const withCookie = (body: unknown, cookie?: string) =>
+    new NextRequest('http://localhost/api/games', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+    });
+  beforeEach(() => {
+    // thứ tự trong `words` cố ý lộn mức: số thứ tự vẫn là mức 1 trước (#1, #2), rồi mức 2 (#3), rồi mức 3 (#4)
+    repo = createMemoryRepository({
+      'cổ thụ': { keyword: true, tier: 3 },
+      'vũ trụ': { keyword: true, tier: 1 },
+      'tiêu dao': { keyword: true, tier: 2 },
+      'hòa bình': { keyword: true, tier: 1 },
+    });
+    setRepositoryForTests(repo);
+  });
+
+  test('mỗi độ khó là một khoảng số liền nhau từ 1; cùng số luôn là cùng từ', async () => {
+    const game = (await (await createRoute.POST(withCookie({}))).json()) as PublicGame;
+    expect(game.keywordCounts).toEqual([2, 3, 4]);
+    for (const cookie of ['dc_difficulty=1', 'dc_difficulty=2', 'dc_difficulty=3']) {
+      const res = await createRoute.POST(withCookie({ number: 2 }, cookie));
+      expect(repo.games.get(((await res.json()) as PublicGame).id)!.answer, cookie).toBe('hòa bình');
+    }
+    expect(repo.games.get(((await (await createRoute.POST(withCookie({ number: 4 }, 'dc_difficulty=3'))).json()) as PublicGame).id)!.answer).toBe('cổ thụ');
+  });
+
+  test('chọn số: chỉ được các số của độ khó đang chọn (cookie; không có cookie = Thường)', async () => {
+    const reject = async (number: number, cookie?: string) => {
+      const res = await createRoute.POST(withCookie({ number }, cookie));
+      return [res.status, ((await res.json()) as { message: string }).message];
+    };
+    expect(await reject(3)).toEqual([400, 'Độ khó Thường có từ khóa số 1 đến 2; không có số 3']);
+    expect(await reject(4, 'dc_difficulty=2')).toEqual([400, 'Độ khó Khó có từ khóa số 1 đến 3; không có số 4']);
+    expect(await reject(5, 'dc_difficulty=3')).toEqual([400, 'Độ khó Rất khó có từ khóa số 1 đến 4; không có số 5']);
+    expect((await createRoute.POST(withCookie({ number: 3 }, 'dc_difficulty=2'))).status).toBe(201);
+    expect((await createRoute.POST(withCookie({ number: 4 }, 'dc_difficulty=3'))).status).toBe(201);
+  });
+
+  test('ván ngẫu nhiên chỉ ra từ trong khoảng số của độ khó', async () => {
+    for (let i = 0; i < 6; i++) {
+      const game = (await (await createRoute.POST(withCookie({}, 'dc_difficulty=1'))).json()) as PublicGame;
+      expect(game.keywordNo).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test('link chia sẻ /solo?id=N không phụ thuộc độ khó: mở được cả từ khóa ngoài khoảng của Thường', async () => {
+    const res = await startRoute.GET(new NextRequest('http://localhost/api/games/start?id=4', { headers: { Cookie: 'dc_difficulty=1' } }));
+    expect(res.status).toBe(303);
+    expect([...repo.games.values()].map((g) => g.answer)).toEqual(['cổ thụ']);
   });
 });
 

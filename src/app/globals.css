@@ -89,8 +89,30 @@ button { font: inherit; color: inherit; }
 .theme-opt:has(input:checked) { background: var(--switch-knob); color: var(--accent); box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
 .theme-opt:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 1px; }
 @media (prefers-reduced-motion: reduce) { .theme-opt { transition: none; } }
-/* Điện thoại: hai bên thanh trên chỉ rộng vừa các nút (tên trang ở giữa phần còn lại) và mọi thứ nhỏ lại một nấc, để đủ chỗ cho nút
-   giao diện mà tên trang vẫn nằm trọn trên một dòng (Chơi đơn có số từ khóa + 3 nút; Inside Room có "Rời phòng" + nút giao diện) */
+/* Menu ☰ ở góc phải thanh trên: bảng nổi ngay dưới nút, trên mọi thứ khác (kể cả bubble chat) */
+.settings-menu { position: relative; flex: none; display: inline-flex; }
+.settings-panel {
+  position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: min(300px, calc(100vw - 24px));
+  display: flex; flex-direction: column; gap: 14px; padding: 14px; text-align: left;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.settings-section { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.settings-section + .settings-section { padding-top: 12px; border-top: 1px solid var(--border); }
+.settings-title { margin: 0; font-size: .82rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.settings-title .lock-badge { margin-left: 0; text-transform: none; letter-spacing: 0; }
+.difficulty-options { align-self: stretch; display: flex; flex-direction: column; gap: 4px; }
+.difficulty-opt { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
+.difficulty-opt:hover:not(.disabled) { background: var(--surface-2); }
+.difficulty-opt:has(input:checked) { border-color: var(--accent); background: var(--surface-2); }
+.difficulty-opt input { margin: 4px 0 0; accent-color: var(--accent); flex: none; }
+.difficulty-opt.disabled { cursor: not-allowed; }
+.difficulty-opt.disabled:not(:has(input:checked)) { opacity: .5; }
+.difficulty-text { display: flex; flex-direction: column; line-height: 1.3; }
+.difficulty-name { font-weight: 700; }
+.difficulty-desc { font-size: .82rem; color: var(--muted); }
+.settings-note { margin: 0; font-size: .82rem; color: var(--muted); }
+/* Điện thoại: hai bên thanh trên chỉ rộng vừa các nút (tên trang ở giữa phần còn lại) và mọi thứ nhỏ lại một nấc, để đủ chỗ cho các
+   nút mà tên trang vẫn nằm trọn trên một dòng (Chơi đơn có số từ khóa + 3 nút; Inside Room có "Rời phòng" + nút menu) */
 @media (max-width: 479.98px) {
   .topbar .wrap { grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; }
   .brand { font-size: 1.2rem; overflow: hidden; text-overflow: ellipsis; }

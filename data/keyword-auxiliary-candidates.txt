@@ -25,7 +25,6 @@ ao tù nước đục
 ăn cơm tập thể
 ăn kĩ làm dối
 ăn lắm ị nhiều
-ăn lắm ỉa nhiều
 ăn nhờ ở đậu
 ậm à ậm ừ
 âm hao
@@ -239,7 +238,6 @@ dưỡng thân
 đạp thanh
 đau đầu vì tiền
 đau sờ cau
-đau trời váng
 đáy bề mò kim
 đắc nhân
 đắc trung
@@ -325,7 +323,6 @@ giai tầng
 gian hoạt
 gián hoặc
 giản phổ
-gian phụ
 giàn rớ
 giãn thợ
 gián viện
@@ -338,7 +335,6 @@ giao phong
 giáo sợi
 giáo tài
 giao tế xứ
-giao vĩ
 giáp năm
 giáp trường
 giày ta
@@ -448,7 +444,6 @@ hoàng ân
 hoàng chủng
 hoàng lương
 hoàng phái
-hoang thai
 hoàng thiên
 hoàng thiết
 hoàng trùng
@@ -500,7 +495,6 @@ hồn mai
 hôn môi xa
 hồng bảo
 hồng chuyên
-hổng đít
 hồng lạng
 hồng mai
 hồng ngâm
@@ -646,7 +640,6 @@ khét mò
 khí cầu máy
 khỉ cộc
 khí dụng
-khỉ già
 khi khu
 khi nên
 khí nhân
@@ -777,7 +770,6 @@ lai máu
 lai tử
 lái vọt
 lam đồng
-làm gái
 làm mồi
 làm theo
 làm trai
@@ -791,7 +783,6 @@ lang trắng
 lành canh
 lành da
 lành dạ
-lạnh dạ
 lánh mình
 lão hủ
 lao màn
@@ -837,7 +828,6 @@ lễ tâm
 lễ tơ hồng
 lễ tục
 lên đinh
-lên đỉnh
 lên hơi
 lên mâm
 lệnh ái
@@ -1057,18 +1047,14 @@ mẫn nhuệ
 mần tuồng
 mật bài
 mất cướp
-mất giống
 mật kế
 mật sắc
 mẫu cữu
 mấy hơi
 mây ngàn
 mấy thuở
-mẹ dàu
-mẹ đĩ
 mẹ đỏ
 mẹ già
-mẹ mốc
 me tây
 men mét
 mèo già hóa cáo
@@ -1337,7 +1323,6 @@ nhanh nhánh
 nhão bét
 nhão nhạo
 nhàu nhàu
-nhảy lưng
 nhạy miệng
 nhay nhay
 nhảy phượng
@@ -1543,7 +1528,6 @@ phải bả
 phải dấu
 phải điều
 phải đòn
-phải gái
 phải giá
 phải giờ
 phải khi
@@ -1679,7 +1663,6 @@ qua chuyện
 qua giáp
 qua lần
 qua mâu
-quạ mổ
 quả thế
 quả tối
 quái cổ
@@ -1945,7 +1928,6 @@ sở tiên
 sở ước
 sợi đèn
 sớm mận tối đào
-sờm sỡ
 sởn gai ốc
 sơn hồ
 sơn quân
@@ -2525,7 +2507,6 @@ tinh xác
 tít mù xanh
 tiu nguỷu
 tỏ bày
-to bụng
 tỏ lộ
 tỏ rạng
 tỏ rõ
@@ -2682,7 +2663,6 @@ trấn yểm
 trật trệu
 trật trưỡng
 trầu cau
-trâu chó
 trâu gác bếp
 trâu mộng
 trầu quơ
@@ -2965,7 +2945,6 @@ vương kì
 vỹ sinh ôm cây
 xả xú páp
 xạo sự
-xăng pha nhớt
 xập xám chướng
 xe hương
 xe tơ

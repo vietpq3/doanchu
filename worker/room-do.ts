@@ -135,7 +135,7 @@ export class RoomDO extends DurableObject<RoomEnv> {
         result = this.machine.stand(pid);
         break;
       case 'start':
-        result = this.machine.start(pid, now, this.reviewWord(msg.word));
+        result = this.machine.start(pid, now, this.reviewWord(msg.word), msg.difficulty);
         break;
       case 'guess':
         result = this.machine.guess(pid, msg.guess, now);
@@ -202,10 +202,10 @@ export class RoomDO extends DurableObject<RoomEnv> {
    * Mọi thay đổi đều đi qua đây sau khi áp dụng vào RoomMachine.
    */
   private async process(now: number): Promise<void> {
-    const { needAnswer, reviewWord } = this.machine.tick(now);
+    const { needAnswer, reviewWord, difficulty } = this.machine.tick(now);
     if (needAnswer) {
       await this.save(now); // cho người chơi thấy "đang bắt đầu" ngay
-      const answer = reviewWord ?? (await pickRandomKeyword(this.env));
+      const answer = reviewWord ?? (await pickRandomKeyword(this.env, difficulty));
       const definitions = answer ? await fetchDefinitions(this.env, answer) : []; // lấy sẵn, chỉ gửi cho người chơi khi ván kết thúc
       if (answer && this.machine.beginMatch(answer, definitions, Date.now())) {
         now = Date.now();
