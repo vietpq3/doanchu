@@ -39,7 +39,7 @@ Biến môi trường ở local nằm trong `.dev.vars` (xem `.dev.vars.example`
 | `SUPABASE_SECRET_KEY` | app (server), `db:seed` | Secret key (`sb_secret_…` hoặc `service_role`). Chỉ dùng ở server, không bao giờ gửi xuống trình duyệt. |
 | `SUPABASE_DB_URL` | `db:migrate` | Connection string Postgres (Dashboard → Connect → Session pooler) |
 | `DICTIONARY_DB_PATH` | `db:seed`, `keywords` | Từ điển SQLite nguồn, mặc định `../../database/minhqnd_dictionary.db` |
-| `REVIEW_MODE` | app | `1` = cho phép chọn sẵn từ khóa bằng `/?tu=vũ trụ` để kiểm thử. Local bật trong `.dev.vars`; production để `0` trong `wrangler.jsonc`. |
+| `REVIEW_MODE` | app | `1` = cho phép chọn sẵn từ khóa bằng `/solo?tu=vũ trụ` (Chơi đơn) hoặc `/rooms/1?tu=vũ trụ` + Start (đấu theo nhóm) để kiểm thử. Local bật trong `.dev.vars`; production để `0` trong `wrangler.jsonc`. |
 | `NEXTJS_ENV` | `preview` | `development` khi chạy Worker ở local |
 
 App không dùng `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: mọi truy vấn chạy ở server bằng secret key, còn hai bảng bật RLS và không có policy nào, nên publishable key không đọc được dữ liệu (nhất là đáp án trong bảng `games`).
@@ -129,7 +129,7 @@ npm run typecheck      # cả app (Next) lẫn worker Cloudflare (tự sinh work
 ```
 
 Test E2E (thư mục `e2e/`) dùng Google Chrome cài sẵn trên máy (đổi bằng `E2E_BROWSER_CHANNEL`), chạy giả lập màn hình điện thoại.
-- `basic.spec.ts`: chạy trên mọi bản (luật chơi, lượt bị từ chối, New game, Hint, thua sau 6 lượt, tải lại trang, Chơi lại).
+- `basic.spec.ts`: chạy trên mọi bản (trang chủ, luật chơi, lượt bị từ chối, New game, Hint, thua sau 6 lượt, tải lại trang, Chơi lại).
 - `review.spec.ts`: cần chọn sẵn từ khóa bằng `?tu=` (luật màu theo ví dụ requirement, thắng, chữ lặp, kiểu dấu). Tự bỏ qua khi server tắt `REVIEW_MODE`.
 - `versus.spec.ts`: đấu theo nhóm, mỗi "người chơi" là một trình duyệt riêng cùng vào một room (mỗi test một room). Cần Durable Object (`npm run preview` hoặc bản đã deploy). Test cần từ khóa cố định (`/rooms/1?tu=vũ trụ` + Start) tự bỏ qua khi server tắt `REVIEW_MODE`. Khi tự chạy server local, `playwright.config.ts` xoá và dùng thư mục trạng thái riêng (`--persist-to .wrangler/e2e-state`) để các room bắt đầu trống, không dính dữ liệu lần chạy trước.
 
@@ -137,6 +137,7 @@ Mỗi lần chạy test E2E tạo vài ván thật trong bảng `games`; ván c�
 
 ## Luật chơi đã chốt
 
+- **Trang chủ (`/`):** chỉ có hai ô vuông **Chơi đơn** (→ `/solo`) và **Đấu theo nhóm** (→ `/rooms`, xem [Đấu theo nhóm](#đấu-theo-nhóm)). Màn Chơi đơn có nút **Trang chủ** cạnh nút `?` ở góc trên bên phải. Các luật bên dưới là của Chơi đơn.
 - **Màu:**
   - xanh lá: đúng chữ, đúng dấu, đúng vị trí
   - vàng: đúng chữ, đúng dấu, sai vị trí
@@ -154,23 +155,25 @@ Mỗi lần chạy test E2E tạo vài ván thật trong bảng `games`; ván c�
   - Đổi kiểu dấu: sửa `DEFAULT_STYLE` trong `src/lib/game/vietnamese.ts`, rồi chạy lại `npm run db:seed`.
 - **Cách gõ:** gõ vào ô nhập bằng bộ gõ tiếng Việt của máy (Unikey/EVKey, Telex/VNI của macOS, bàn phím iOS/Android). Game không tự xử lý Telex. Bên dưới ô nhập là bảng chữ cái tô màu theo kết quả.
 - **Số thứ tự từ khóa:** số `#N` hiện ở góc trên bên trái, là số của từ khóa đang chơi (xem [Bộ từ khóa](#bộ-từ-khóa)). Bấm vào đó mở hộp thoại chọn số (từ 1 đến tổng số từ khóa): nhập số rồi bấm **Bắt đầu** thì bỏ ván hiện tại và bắt đầu ván mới với đúng từ khóa đó; cùng số thì luôn ra cùng từ khóa. Dùng được cả khi ván đã kết thúc. Server từ chối số ngoài khoảng (`keyword_not_found`) hoặc không phải số nguyên (`bad_request`). Từ khóa không lộ ra trước khi ván kết thúc dù biết số.
-  - **Link `/?id=300`**: mở đường dẫn này để bắt đầu ván mới với từ khóa số 300 (gửi cho người khác được). Trang chuyển hướng sang `GET /api/games/start?id=300` (tạo ván và ghi cookie) rồi về `/`, nên URL cuối không còn `?id=` và tải lại trang vẫn chơi tiếp đúng ván đó, kể cả khi chưa đoán lượt nào. Mỗi lần mở link là một ván mới (bỏ ván đang chơi). `id` không phải số nguyên dương hoặc không có từ khóa số đó thì bị bỏ qua: không tạo ván, vào `/` như bình thường. `?tu=` (REVIEW_MODE) được ưu tiên hơn `?id=`.
+  - **Link `/solo?id=300`**: mở đường dẫn này để bắt đầu ván mới với từ khóa số 300 (gửi cho người khác được). Trang chuyển hướng sang `GET /api/games/start?id=300` (tạo ván và ghi cookie) rồi về `/solo`, nên URL cuối không còn `?id=` và tải lại trang vẫn chơi tiếp đúng ván đó, kể cả khi chưa đoán lượt nào. Mỗi lần mở link là một ván mới (bỏ ván đang chơi). `id` không phải số nguyên dương hoặc không có từ khóa số đó thì bị bỏ qua: không tạo ván, vào `/solo` như bình thường. `?tu=` (REVIEW_MODE) được ưu tiên hơn `?id=`. Từ v1.3.0 link cũ dạng `/?id=N` không còn tác dụng (chỉ mở trang chủ).
 - **New game:** nút dưới bảng chữ cái, chỉ hiện khi đang chơi. Bỏ từ khóa hiện tại (không tính thắng/thua) và bắt đầu ngay ván mới với từ khóa mới; ván bỏ dở được dọn tự động như ván cũ. Không hỏi xác nhận.
 - **Hint:** nút cạnh New game, hiện số lần còn lại (`Hint (3)`). Mỗi ván được gợi ý tối đa **3 lần**, không mất lượt đoán. Server chọn ngẫu nhiên một ô chưa từng được tô xanh lá ở lượt nào và chưa được gợi ý; chữ đúng của ô đó hiện mờ (viền đứt) ở hàng đang gõ, trong ô người chơi chưa gõ chữ, và vẫn hiện ở các lượt sau. Gợi ý lưu ở server nên tải lại trang vẫn giữ; ván mới (New game / Chơi lại) có lại 3 lần. Đổi số lần ở `maxHints` trong `src/lib/server/config.ts`. **Hiện đang tạm ẩn** nút và dòng giải thích trong luật chơi bằng CSS (`.hint-feature` trong `globals.css`; xoá rule đó và bỏ `test.skip` ở hai test Hint trong `e2e/` để hiện lại); API `POST /api/games/:id/hints` vẫn hoạt động.
-- **Kết thúc ván:** màn hình kết thúc hiện 0,7 giây sau lượt cuối, gồm từ khóa, giải nghĩa, nút **"Thách bạn bè đoán từ này 🔗"**, nút Chơi lại và nút đóng để xem lại ô chữ. Nút share copy link `<origin>/?id=N` (N là số thứ tự của từ khóa) vào clipboard và đổi chữ thành "✓ Đã copy link! Gửi bạn bè nhé" trong 3 giây; người nhận mở link sẽ vào thẳng từ khóa đó (xem *Link `/?id=300`* ở trên). Nếu trình duyệt không cho copy (trang http, trình duyệt nhúng...) thì hiện link trong một ô đã chọn sẵn để tự copy. Ván không có số thứ tự (ván cũ trước v1.1.0, hoặc từ không phải từ khóa chọn bằng `?tu=`) thì không có nút này.
+- **Kết thúc ván:** màn hình kết thúc hiện 0,7 giây sau lượt cuối, gồm từ khóa, giải nghĩa, nút **"Thách bạn bè đoán từ này 🔗"**, nút Chơi lại và nút đóng để xem lại ô chữ. Nút share copy link `<origin>/solo?id=N` (N là số thứ tự của từ khóa) vào clipboard và đổi chữ thành "✓ Đã copy link! Gửi bạn bè nhé" trong 3 giây; người nhận mở link sẽ vào thẳng từ khóa đó (xem *Link `/solo?id=300`* ở trên). Nếu trình duyệt không cho copy (trang http, trình duyệt nhúng...) thì hiện link trong một ô đã chọn sẵn để tự copy. Ván không có số thứ tự (ván cũ trước v1.1.0, hoặc từ không phải từ khóa chọn bằng `?tu=`) thì không có nút này.
 
 ## Đấu theo nhóm
 
-Chế độ đấu nhiều người (mô tả đầy đủ, các quyết định và giả định: `docs/versus-v2.md`, nằm ngoài repo). Trang `Chơi đơn` (`/`) có ô tên + nút **Đấu theo nhóm** → `/rooms` (5 room) → `/rooms/[id]` (Sảnh chờ + Bàn chơi, nút Start) → `/rooms/[id]/versus` (cùng một từ khóa, ai đoán đúng trước thắng) → popup `OK (10s)` → về lại Inside Room.
+Chế độ đấu nhiều người (mô tả đầy đủ, các quyết định và giả định: `docs/versus-v2.md`, nằm ngoài repo). Ô **Đấu theo nhóm** ở trang chủ (`/`) → `/rooms` (5 room) → `/rooms/[id]` (Sảnh chờ + Bàn chơi, nút Start) → `/rooms/[id]/versus` (cùng một từ khóa, ai đoán đúng trước thắng) → popup `OK (10s)` → về lại Inside Room.
 
 **Quy tắc** (hằng số ở `src/lib/versus/config.ts`):
 - **Sức chứa:** Sảnh chờ nhận tối đa 10 người khi *vào* room; Bàn chơi có 6 ô và người ngồi bàn không tính vào 10 (người từ bàn quay về sảnh luôn được nhận). Bấm ô trống để ngồi, bấm tên mình để đứng dậy.
 - **Start:** bật khi có từ 2 người ở bàn, ai ở bàn cũng bấm được. Đếm ngược 5 giây ngay trên nút (`Start after 5s`…); **mọi thay đổi số người ở bàn** (ngồi, đứng, rời, mất kết nối) huỷ ngay, phải bấm lại. Hết 5 giây thì khoá bàn, chọn từ khóa ngẫu nhiên và đưa những người ở bàn sang màn Versus.
-- **Trong ván:** mỗi người đoán riêng (luật như Chơi đơn, không Hint/New game/`#N`); đối thủ chỉ thấy tên + số lượt (`lượt 3/6`), không thấy chữ/màu.
+- **Trong ván:** mỗi người đoán riêng (luật như Chơi đơn, không Hint/New game/`#N`); đối thủ chỉ thấy tên + số lượt (`lượt 3/6`), không thấy chữ/màu. Có đồng hồ **thời gian còn lại** của ván (`Lượt 2/6 · còn 9:41`, đổi màu ở phút cuối).
 - **Từ đoán phải hợp lệ (không đòi có nghĩa):** chỉ ở đấu theo nhóm. Mọi âm tiết của từ đoán phải đúng cấu trúc tiếng Việt (phụ âm đầu + vần + thanh, bắt buộc đúng chính tả `c/k`, `g/gh`, `ng/ngh`) hoặc có trong từ điển; nếu không báo "Từ này không hợp lệ" (chung chung, không nêu âm tiết sai) và không mất lượt. Để không ai nhập chuỗi như `aê yiư`, `chiơ` chỉ nhằm loại trừ chữ cái; `tượi` (không có trong từ điển) vẫn hợp lệ. Từ khóa luôn được chấp nhận. Hạn chế: âm tiết đúng cấu trúc ghép vô nghĩa (vd `ba bư`) vẫn qua. Tắt khẩn cấp: `VERSUS.validateGuessWords = false` ở `src/lib/versus/config.ts`.
 - **Kết thúc ván** khi có người đoán đúng, hoặc không còn ai đang đoán (mọi người hết 6 lượt hoặc đã rời), hoặc quá 10 phút. Người rời giữa ván bị loại (nút Rời phòng: ngay; mất kết nối: chờ 30 giây nối lại, tải lại trang không mất ván); người còn lại đoán tiếp, kể cả chỉ còn một người.
 - **Giải nghĩa:** popup kết quả hiện giải nghĩa từ khóa (tối đa 4 nghĩa, như Chơi đơn). Giải nghĩa được lấy lúc bắt đầu ván và chỉ gửi xuống khi ván kết thúc.
+- **Popup kết quả:** `OK (10s)` đếm ngược tới lúc phòng mở lại; bấm `OK` hoặc hết giờ thì về Inside Room. Nút ✕ (hoặc Esc, bấm ra ngoài) **đóng popup để xem lại ô chữ của mình**: dưới ô chữ hiện kết quả, nút `Về phòng (Ns)` (vẫn đếm ngược, hết giờ tự về) và nút chụp ảnh. **`Chụp ảnh màn hình`** (ở popup và màn xem lại) vẽ ô chữ của mình kèm kết quả và từ khóa thành ảnh PNG rồi copy vào clipboard để dán chia sẻ; trình duyệt không cho copy ảnh thì tải ảnh về máy. Thời gian xem lại bằng thời gian khóa phòng (10 giây).
 - **Sau ván:** mọi người về Sảnh chờ, Bàn chơi trống, phòng khoá 10 giây; khối **Lượt trước** (từ khóa + giải nghĩa + người thắng/"Không ai tìm ra") nằm **dưới nút Start** để Start không bị đẩy xuống.
+- **Nhập tên:** bấm ô Đấu theo nhóm khi **đã có tên** thì vào thẳng `/rooms` (trang chủ hiện "Đấu theo nhóm với tên X · Đổi tên"); **chưa có tên** thì mở hộp thoại nhập tên, điền sẵn một **tên gợi ý ngẫu nhiên** (vd `Hổ Vàng 27`, nút 🎲 đổi gợi ý khác, `src/lib/versus/names.ts`): bấm `Vào` (hoặc Enter) là vào luôn, hoặc gõ tên riêng; tên trống báo "Hãy nhập tên của bạn". Đổi tên được ở trang chủ và ở `/rooms` (`Đổi tên`). Mở thẳng `/rooms` hoặc `/rooms/[id]` khi chưa có tên thì hộp thoại hiện ngay tại chỗ (`NameGate`), nhập xong vào tiếp; `Hủy` thì về trang chủ.
 - **Danh tính:** không có tài khoản; `playerId` (UUID) và tên lưu ở `localStorage`. Tên 1–20 ký tự, trùng trong phòng thì thêm ` (2)`. Một `playerId` chỉ một kết nối (mở tab mới thì tab cũ bị thay).
 
 **Kiến trúc** (mỗi room là một Durable Object):
@@ -192,13 +195,14 @@ Chế độ đấu nhiều người (mô tả đầy đủ, các quyết định
 ```
 src/
   app/
-    page.tsx                         Trang chơi (Server Component): tiếp tục ván trong cookie hoặc tạo ván mới
+    page.tsx                         Trang chủ: hai ô Chơi đơn / Đấu theo nhóm (HomeScreen)
+    solo/page.tsx                    Trang Chơi đơn (Server Component): tiếp tục ván trong cookie hoặc tạo ván mới; ?id=N bắt đầu từ khóa số N
     layout.tsx, globals.css, error.tsx, icon.svg
     api/games/route.ts               POST: tạo ván mới (nút Chơi lại, New game; body { number } để chọn từ khóa theo số)
-    api/games/start/route.ts         GET ?id=N: tạo ván với từ khóa số N, ghi cookie, chuyển về / (đích của link /?id=N)
+    api/games/start/route.ts         GET ?id=N: tạo ván với từ khóa số N, ghi cookie, chuyển về /solo (đích của link /solo?id=N)
     api/games/[id]/guesses/route.ts  POST: gửi lượt đoán — server kiểm tra, chấm màu, lưu
     api/games/[id]/hints/route.ts    POST: nút Hint — server chọn ngẫu nhiên một ô chưa xanh lá, lưu
-    rooms/                           Đấu theo nhóm: page.tsx (Room List), [id]/layout.tsx (giữ WebSocket), [id]/page.tsx (Inside Room), [id]/versus/page.tsx
+    rooms/                           Đấu theo nhóm: page.tsx (Room List), [id]/layout.tsx (hỏi tên nếu chưa có, giữ WebSocket), [id]/page.tsx (Inside Room), [id]/versus/page.tsx
   components/                        Giao diện (GameScreen là Client Component duy nhất có state; KeywordDialog: chọn từ khóa theo số)
   lib/
     game/                            Lõi game thuần TypeScript, dùng chung server và client
@@ -214,9 +218,10 @@ src/
       supabase-repository.ts         Bản dùng Supabase (secret key)
       games.ts                       Tạo ván, kiểm tra và chấm lượt đoán
       http.ts                        Cookie, JSON, lỗi
-  lib/client/                        api.ts: gọi API; player.ts: playerId + tên trong localStorage; clipboard.ts
-  lib/versus/                        Đấu theo nhóm: room.ts (máy trạng thái), protocol.ts, config.ts (dùng chung worker và giao diện)
-  components/versus/                 RoomProvider, RoomListScreen, InsideRoomScreen, VersusScreen, ResultDialog, VersusEntry
+  lib/client/                        api.ts: gọi API; player.ts: playerId + tên trong localStorage (useSavedName tự cập nhật khi đổi tên); clipboard.ts (chữ, ảnh); boardImage.ts (vẽ ảnh ô chữ)
+  lib/versus/                        Đấu theo nhóm: room.ts (máy trạng thái), protocol.ts, config.ts, syllable.ts (kiểm tra từ đoán), names.ts (tên gợi ý), summary.ts (câu kết quả, đồng hồ) — dùng chung worker và giao diện
+  components/HomeScreen.tsx          Trang chủ: hai ô vuông, hỏi tên trước khi vào đấu theo nhóm
+  components/versus/                 RoomProvider, RoomListScreen, InsideRoomScreen, VersusScreen, ResultDialog, NameDialog (nhập tên, tên gợi ý), NameGate (hỏi tên tại chỗ), ScreenshotButton (chụp ảnh ô chữ)
   components/DefinitionList.tsx      Danh sách giải nghĩa (dùng chung màn hình kết thúc của Chơi đơn và đấu theo nhóm)
 worker/                              Worker Cloudflare tùy biến: index.ts (định tuyến), room-do.ts (Durable Object), keyword.ts
 supabase/migrations/                 Schema (bảng words, games; hàm pick_keyword, renumber_keywords)
@@ -259,6 +264,8 @@ npm version 1.4.0 --no-git-tag-version   # hoặc chỉ định thẳng một s�
 
 Các lệnh sửa `package.json` + `package-lock.json`; số được nhúng vào code lúc build nên phải tăng **trước** `npm run deploy`. Lịch sử bên dưới ghi các thay đổi đáng chú ý; bản vá nhỏ có thể gộp thành một dòng.
 
+- **v1.3.1**: đấu theo nhóm: đóng popup kết quả (✕/Esc) để **xem lại ô chữ** với nút đếm ngược `Về phòng (Ns)`; nút **`Chụp ảnh màn hình`** copy ảnh ô chữ của mình vào clipboard để chia sẻ; màn đấu hiện **thời gian còn lại** của ván.
+- **v1.3.0**: **trang chủ mới** (`/`) chỉ có hai ô vuông `Chơi đơn` và `Đấu theo nhóm`; Chơi đơn chuyển sang `/solo` (có nút Trang chủ); vào đấu theo nhóm: đã có tên thì vào thẳng, chưa có thì hộp thoại nhập tên có **tên gợi ý ngẫu nhiên**; đổi tên ở trang chủ và Room List; mở thẳng link phòng khi chưa có tên thì hỏi tên tại chỗ. Link chia sẻ từ khóa thành `/solo?id=N` (link cũ `/?id=N` chỉ mở trang chủ).
 - **v1.2.3**: đấu theo nhóm: bật lại kiểm tra từ đoán ở mức **hợp lệ** (không đòi có nghĩa): mọi âm tiết đúng cấu trúc tiếng Việt hoặc có trong từ điển (`tượi` hợp lệ, `chiơ` không), thông báo "Từ này không hợp lệ".
 - **v1.2.2**: đấu theo nhóm: **tạm tắt** kiểm tra từ đoán phải có trong từ điển (cờ `VERSUS.validateGuessWords = false`; từ đúng nghĩa nhưng từ điển không có không còn bị từ chối).
 - **v1.2.1**: đấu theo nhóm: từ đoán phải có trong từ điển (chặn nhập chuỗi vô nghĩa để loại trừ chữ cái); popup kết quả và khối `Lượt trước` có giải nghĩa từ khóa; `Lượt trước` nằm dưới nút `Start`.

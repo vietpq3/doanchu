@@ -218,15 +218,15 @@ describe('số thứ tự từ khóa (#N)', () => {
   });
 });
 
-describe('GET /api/games/start?id=N (đích chuyển hướng của /?id=N)', () => {
+describe('GET /api/games/start?id=N (đích chuyển hướng của /solo?id=N)', () => {
   const start = async (query: string) => {
     const res = await startRoute.GET(new NextRequest(`http://localhost/api/games/start${query}`));
     return { status: res.status, location: res.headers.get('location'), cookie: res.headers.get('set-cookie'), cache: res.headers.get('cache-control') };
   };
 
-  test('tạo ván mới với từ khóa số N, ghi cookie ván đó và chuyển về "/"', async () => {
+  test('tạo ván mới với từ khóa số N, ghi cookie ván đó và chuyển về "/solo"', async () => {
     const res = await start('?id=2');
-    expect([res.status, res.location, res.cache]).toEqual([303, '/', 'no-store']);
+    expect([res.status, res.location, res.cache]).toEqual([303, '/solo', 'no-store']);
     expect(repo.games.size).toBe(1);
     const [created] = [...repo.games.values()];
     expect(created).toMatchObject({ answer: 'hòa bình', keywordNo: 2, over: false });
@@ -244,10 +244,10 @@ describe('GET /api/games/start?id=N (đích chuyển hướng của /?id=N)', ()
     expect([...repo.games.values()].map((g) => [g.answer, g.keywordNo])).toEqual([['vũ trụ', 1], ['vũ trụ', 1]]);
   });
 
-  test('id không hợp lệ hoặc không có từ khóa số đó: không tạo ván, không ghi cookie, về "/"', async () => {
+  test('id không hợp lệ hoặc không có từ khóa số đó: không tạo ván, không ghi cookie, về "/solo"', async () => {
     for (const query of ['', '?id=', '?id=abc', '?id=0', '?id=-1', '?id=1.5', '?id=99999999999', '?id=3', '?id=2147483647']) {
       const res = await start(query);
-      expect([query, res.status, res.location, res.cookie]).toEqual([query, 303, '/', null]);
+      expect([query, res.status, res.location, res.cookie]).toEqual([query, 303, '/solo', null]);
     }
     expect(repo.games.size).toBe(0);
   });

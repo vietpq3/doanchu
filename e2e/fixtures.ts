@@ -33,9 +33,9 @@ export class GamePage {
     this.hintCells = page.locator('.row.current .cell[data-hint="1"]');
   }
 
-  /** Mở trang chơi; có `word` thì chọn sẵn từ khóa bằng ?tu= (cần REVIEW_MODE=1). */
+  /** Mở trang Chơi đơn (/solo); có `word` thì chọn sẵn từ khóa bằng ?tu= (cần REVIEW_MODE=1). */
   async open(word?: string) {
-    await this.page.goto(word ? `/?tu=${encodeURIComponent(word)}` : '/');
+    await this.page.goto(word ? `/solo?tu=${encodeURIComponent(word)}` : '/solo');
     await expect(this.meta).toBeVisible();
   }
 

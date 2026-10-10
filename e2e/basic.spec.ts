@@ -5,6 +5,23 @@ import { expect, reviewModeEnabled, test } from './fixtures';
 /** Phiên bản trong package.json: phải khớp số hiện ở đầu hộp thoại Luật chơi (kể cả trên bản đã deploy). */
 const appVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version as string;
 
+test('trang chủ có hai ô Chơi đơn và Đấu theo nhóm; Chơi đơn ở /solo và có nút về trang chủ', async ({ game, page }) => {
+  await page.goto('/');
+  const tiles = page.locator('.mode-tile');
+  await expect(tiles).toHaveCount(2);
+  await expect(tiles.nth(0)).toContainText('Chơi đơn');
+  await expect(tiles.nth(1)).toContainText('Đấu theo nhóm');
+  await expect(page.locator('#guess')).toHaveCount(0); // trang chủ không còn màn chơi
+
+  await page.getByRole('link', { name: /Chơi đơn/ }).click();
+  await expect(page).toHaveURL(/\/solo$/);
+  await expect(game.meta).toContainText('Lượt 1/6');
+
+  await page.getByRole('link', { name: 'Trang chủ' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(tiles).toHaveCount(2);
+});
+
 test.describe('lần đầu vào trang', () => {
   test.use({ seenHelp: false });
 
@@ -179,10 +196,10 @@ test('số thứ tự từ khóa (#N) ở góc trên bên trái; bấm vào đ�
   await expect(game.input).toBeFocused();
 });
 
-test('/?id=N bắt đầu ván mới với từ khóa số N, về "/" và nhớ ván ngay cả khi tải lại trước lượt đoán đầu', async ({ game, page }) => {
-  await page.goto('/?id=7');
+test('/solo?id=N bắt đầu ván mới với từ khóa số N, về "/solo" và nhớ ván ngay cả khi tải lại trước lượt đoán đầu', async ({ game, page }) => {
+  await page.goto('/solo?id=7');
   await expect(game.meta).toBeVisible();
-  expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe('/'); // đã về "/", không còn ?id=
+  expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe('/solo'); // đã về "/solo", không còn ?id=
   await expect(game.keywordButton).toHaveText('#7');
   await expect(game.meta).toContainText('Lượt 1/6');
   const structure = await game.structure();
@@ -199,29 +216,29 @@ test('/?id=N bắt đầu ván mới với từ khóa số N, về "/" và nhớ
   await expect(page.locator('.row .cell[data-status]')).toHaveCount(structure.reduce((a, b) => a + b, 0));
 
   // mở link khác khi đang chơi dở: bỏ ván hiện tại, vào từ khóa số 8
-  await page.goto('/?id=8');
+  await page.goto('/solo?id=8');
   await expect(game.keywordButton).toHaveText('#8');
   await expect(game.meta).toContainText('Lượt 1/6');
   await expect(page.locator('.row .cell[data-status]')).toHaveCount(0);
 
   // cùng số thì cùng từ khóa (cùng cấu trúc ô chữ)
-  await page.goto('/?id=7');
+  await page.goto('/solo?id=7');
   await expect(game.keywordButton).toHaveText('#7');
   expect(await game.structure()).toEqual(structure);
 });
 
-test('/?id= không hợp lệ hoặc ngoài khoảng: bỏ qua, vào ván bình thường', async ({ game, page }) => {
+test('/solo?id= không hợp lệ hoặc ngoài khoảng: bỏ qua, vào ván bình thường', async ({ game, page }) => {
   for (const id of ['abc', '0', '-3', '1.5', '99999999999', '2147483647']) {
-    await page.goto(`/?id=${id}`);
+    await page.goto(`/solo?id=${id}`);
     await expect(game.meta).toBeVisible();
     await expect(game.meta).toContainText('Lượt 1/6');
     await expect(game.keywordButton).toHaveText(/^#\d+$/); // một ván ngẫu nhiên bình thường
     await expect(page.locator('.panel[role=alert]')).toHaveCount(0);
   }
   // số hợp lệ nhưng không có từ khóa: tới "/" chứ không dừng ở một trang lỗi hay đường dẫn trung gian
-  await page.goto('/?id=2147483647');
+  await page.goto('/solo?id=2147483647');
   await expect(game.meta).toBeVisible();
-  expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe('/');
+  expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe('/solo');
 });
 
 test('chọn số khi ván đã kết thúc; số ngoài khoảng bị server từ chối; cùng số luôn ra cùng từ khóa', async ({ game, page, request }) => {
@@ -271,8 +288,8 @@ test('chọn số khi ván đã kết thúc; số ngoài khoảng bị server t�
 test.describe('chia sẻ link từ khóa ở màn hình kết thúc', () => {
   test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
-  test('nút chia sẻ copy link /?id=N vào clipboard, mở link ra đúng từ khóa; không copy được thì hiện link để tự copy', async ({ game, page }) => {
-    await page.goto('/?id=7');
+  test('nút chia sẻ copy link /solo?id=N vào clipboard, mở link ra đúng từ khóa; không copy được thì hiện link để tự copy', async ({ game, page }) => {
+    await page.goto('/solo?id=7');
     await expect(game.keywordButton).toHaveText('#7');
     const structure = await game.structure();
     for (let i = 0; i < 6; i++) await game.guessScored(structure.map((n) => 'b'.repeat(n)).join(' '), i);
@@ -280,7 +297,7 @@ test.describe('chia sẻ link từ khóa ở màn hình kết thúc', () => {
 
     const share = game.shareButton;
     await expect(share).toHaveText(/^Thách bạn bè đoán từ này/);
-    const link = `${new URL(page.url()).origin}/?id=7`;
+    const link = `${new URL(page.url()).origin}/solo?id=7`;
 
     // bấm: link có ?id= của từ khóa này nằm trong clipboard, nút báo đã copy rồi trở lại như cũ
     await share.click();

@@ -38,8 +38,8 @@ export function parseKeywordNo(value: unknown): number | null {
   return no >= 1 && no <= MAX_KEYWORD_NO ? no : null;
 }
 
-/** Link chia sẻ từ khóa số `no`: mở link này bắt đầu ván mới với đúng từ khóa đó (xem src/app/page.tsx, parseKeywordNo). */
+/** Link chia sẻ từ khóa số `no`: mở link này (trang Chơi đơn) bắt đầu ván mới với đúng từ khóa đó (xem src/app/solo/page.tsx, parseKeywordNo). */
 export function buildShareLink(origin: string, no: number): string {
-  return `${origin.replace(/\/+$/, '')}/?id=${no}`;
+  return `${origin.replace(/\/+$/, '')}/solo?id=${no}`;
 }
 

@@ -1,32 +1,22 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { getSavedName } from '@/lib/client/player';
+import { saveName, useSavedName } from '@/lib/client/player';
 import type { RoomSummary } from '@/lib/versus/room';
 import { VERSUS } from '@/lib/versus/config';
+import NameDialog from './NameDialog';
 import VersusHeader from './VersusHeader';
 
 const REFRESH_MS = 5000;
 
-/** Danh sách room (/rooms): `Room #id` kèm số người và trạng thái; tự làm mới. Chưa có tên thì về Chơi đơn. */
+/** Danh sách room (/rooms): `Room #id` kèm số người và trạng thái; tự làm mới. Đổi tên được ngay tại đây. Dùng trong NameGate. */
 export default function RoomListScreen() {
-  const router = useRouter();
   const [rooms, setRooms] = useState<RoomSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [name, setName] = useState('');
-
-  useEffect(() => {
-    const saved = getSavedName().trim();
-    if (!saved) {
-      router.replace('/');
-      return;
-    }
-    const raf = setTimeout(() => setName(saved), 0);
-    return () => clearTimeout(raf);
-  }, [router]);
+  const [renaming, setRenaming] = useState(false);
+  const name = useSavedName();
 
   useEffect(() => {
     let cancelled = false;
@@ -53,10 +43,13 @@ export default function RoomListScreen() {
 
   return (
     <>
-      <VersusHeader title="Chọn room" backHref="/" backLabel="Về Chơi đơn" />
+      <VersusHeader title="Chọn room" backHref="/" backLabel="Về trang chủ" />
       <main className="game wrap">
         <p className="meta">
-          <span>{name ? <>Tên của bạn: <b>{name}</b></> : ' '}</span>
+          <span>
+            Tên của bạn: <b>{name}</b>{' '}
+            <button className="link-btn rename-btn" type="button" onClick={() => setRenaming(true)}>Đổi tên</button>
+          </span>
           <span>{VERSUS.roomCount} room</span>
         </p>
 
@@ -85,6 +78,17 @@ export default function RoomListScreen() {
           </ul>
         )}
       </main>
+      <NameDialog
+        open={renaming}
+        title="Đổi tên"
+        initialName={name ?? ''}
+        submitLabel="Lưu"
+        onSubmit={(newName) => {
+          saveName(newName);
+          setRenaming(false);
+        }}
+        onClose={() => setRenaming(false)}
+      />
     </>
   );
 }

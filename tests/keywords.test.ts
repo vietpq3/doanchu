@@ -50,15 +50,15 @@ describe('đọc số thứ tự từ khóa (?id=...)', () => {
 });
 
 describe('link chia sẻ từ khóa', () => {
-  test('dạng <origin>/?id=N, bỏ dấu / thừa ở cuối origin', () => {
-    expect(buildShareLink('https://doanchu.pqv.workers.dev', 300)).toBe('https://doanchu.pqv.workers.dev/?id=300');
-    expect(buildShareLink('http://localhost:3000/', 1)).toBe('http://localhost:3000/?id=1');
+  test('dạng <origin>/solo?id=N (trang Chơi đơn), bỏ dấu / thừa ở cuối origin', () => {
+    expect(buildShareLink('https://doanchu.pqv.workers.dev', 300)).toBe('https://doanchu.pqv.workers.dev/solo?id=300');
+    expect(buildShareLink('http://localhost:3000/', 1)).toBe('http://localhost:3000/solo?id=1');
   });
 
   test('link tạo ra luôn được trang đọc lại đúng số (cùng định dạng ?id= với parseKeywordNo)', () => {
     for (const no of [1, 7, 300, 36362, MAX_KEYWORD_NO]) {
       const url = new URL(buildShareLink('https://example.com', no));
-      expect([url.pathname, parseKeywordNo(url.searchParams.get('id'))]).toEqual(['/', no]);
+      expect([url.pathname, parseKeywordNo(url.searchParams.get('id'))]).toEqual(['/solo', no]);
     }
   });
 });
