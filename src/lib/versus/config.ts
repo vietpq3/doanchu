@@ -30,6 +30,10 @@ export const VERSUS = {
   validateGuessWords: true,
   /** Độ dài tên người chơi */
   nameMax: 20,
+  /** Chat của phòng: độ dài một tin nhắn (ký tự), số tin gần nhất được giữ lại, và tần suất gửi tối đa mỗi người */
+  chatMax: 200,
+  chatHistory: 50,
+  chatRate: { messages: 5, windowMs: 5_000 },
 } as const;
 
 export const roomName = (id: number) => `Room #${id}`;

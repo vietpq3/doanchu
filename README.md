@@ -138,6 +138,10 @@ Mỗi lần chạy test E2E tạo vài ván thật trong bảng `games`; ván c�
 ## Luật chơi đã chốt
 
 - **Trang chủ (`/`):** chỉ có hai ô vuông **Chơi đơn** (→ `/solo`) và **Đấu theo nhóm** (→ `/rooms`, xem [Đấu theo nhóm](#đấu-theo-nhóm)). Màn Chơi đơn có nút **Trang chủ** cạnh nút `?` ở góc trên bên phải. Các luật bên dưới là của Chơi đơn.
+- **Giao diện sáng/tối:** nút ☀/☾ (hai radio button trông như một công tắc) ở thanh trên cùng của mọi trang.
+  - Chưa chọn thì theo cài đặt của máy; chọn thì nhớ cho lần sau (`localStorage` key `doanchu-theme`).
+  - Một đoạn script nhỏ trong `<head>` (`src/lib/themeScript.ts`) đặt màu trước khi trang hiện ra, nên tải lại trang không bị nháy màu.
+  - Trên điện thoại (dưới 480px), hai bên thanh trên chỉ rộng vừa các nút và tên trang nằm giữa phần còn lại (từ 480px trở lên vẫn đúng giữa), để đủ chỗ cho nút này mà tên trang không bị cắt (kể cả màn hình 320px).
 - **Màu:**
   - xanh lá: đúng chữ, đúng dấu, đúng vị trí
   - vàng: đúng chữ, đúng dấu, sai vị trí
@@ -174,6 +178,11 @@ Chế độ đấu nhiều người (mô tả đầy đủ, các quyết định
 - **Popup kết quả:** `OK (10s)` đếm ngược tới lúc phòng mở lại; bấm `OK` hoặc hết giờ thì về Inside Room. Nút ✕ (hoặc Esc, bấm ra ngoài) **đóng popup để xem lại ô chữ của mình**: dưới ô chữ hiện kết quả, nút `Về phòng (Ns)` (vẫn đếm ngược, hết giờ tự về) và nút chụp ảnh. **`Chụp ảnh màn hình`** (ở popup và màn xem lại) vẽ ô chữ của mình kèm kết quả và từ khóa thành ảnh PNG rồi copy vào clipboard để dán chia sẻ; trình duyệt không cho copy ảnh thì tải ảnh về máy. Thời gian xem lại bằng thời gian khóa phòng (10 giây).
 - **Sau ván:** mọi người về Sảnh chờ, Bàn chơi trống, phòng khoá 10 giây; khối **Lượt trước** (từ khóa + giải nghĩa + người thắng/"Không ai tìm ra") nằm **dưới nút Start** để Start không bị đẩy xuống.
 - **Nhập tên:** bấm ô Đấu theo nhóm khi **đã có tên** thì vào thẳng `/rooms` (trang chủ hiện "Đấu theo nhóm với tên X · Đổi tên"); **chưa có tên** thì mở hộp thoại nhập tên, điền sẵn một **tên gợi ý ngẫu nhiên** (vd `Hổ Vàng 27`, nút 🎲 đổi gợi ý khác, `src/lib/versus/names.ts`): bấm `Vào` (hoặc Enter) là vào luôn, hoặc gõ tên riêng; tên trống báo "Hãy nhập tên của bạn". Đổi tên được ở trang chủ và ở `/rooms` (`Đổi tên`). Mở thẳng `/rooms` hoặc `/rooms/[id]` khi chưa có tên thì hộp thoại hiện ngay tại chỗ (`NameGate`), nhập xong vào tiếp; `Hủy` thì về trang chủ.
+- **Chat của phòng:** ở Inside Room và màn Versus, một kênh chung cho mọi người trong phòng (sảnh, bàn, đang đấu). **Laptop** (rộng từ 960px): khung chat là sidebar ở cột bên phải; nút `»` cạnh chữ `Chat` thu gọn nó (trượt mượt sang phải, còn dải hẹp có nút `«` mở lại, chấm đỏ khi có tin mới), trạng thái thu gọn được nhớ cho lần sau. **Điện thoại**: bubble ở góc dưới, bấm để mở/đóng khung chat, chạm ra ngoài khung chat cũng đóng (lần chạm đó không bấm xuống nút bên dưới); có tin mới của người khác khi khung đang đóng thì bubble có **chấm đỏ**. Tin một dòng ≤ 200 ký tự, tối đa 5 tin/5 giây mỗi người; người vào phòng thấy 50 tin gần nhất, phòng trống thì xóa lịch sử. Khung chat của bubble tự đóng khi chuyển giữa sảnh và màn đấu (không che ô chữ); chữ đang gõ được giữ. Không lọc nội dung.
+- **Emoji voz trong chat:** bộ emoji "popopo" của voz.vn (54 ảnh PNG 48px kèm bản 96px cho màn hình nét cao, trong `public/emoji/voz/`). Trước đây dùng bộ "Off" (GIF) của vozforums.com nhưng bị viền răng cưa trên điện thoại: GIF chỉ có trong suốt bật/tắt và chỉ có cỡ 40px.
+  - **Bảng chọn:** nút mặt cười cạnh ô nhập mở bảng emoji ("Dùng gần đây" + toàn bộ). Bấm một emoji thì chèn mã vào chỗ con trỏ, bảng vẫn mở để chọn tiếp.
+  - **Gõ `:x`:** gõ `:` + chữ thì hiện tối đa 3 emoji gần khớp nhất. Chạm/Tab để chèn, ↑↓ để đổi, Esc để bỏ qua. Enter chèn khi đã gõ từ 2 chữ; mới 1 chữ (`:v`, `:p`) thì Enter vẫn gửi tin. So khớp bỏ dấu tiếng Việt, nên gõ Telex (`:sẽy`, `:bó`) vẫn ra emoji.
+  - **Hiển thị:** tin vẫn là chữ; mã `:beauty:` (và các mã cũ của voz như `:sogood:`, hay `:)`, `:D`, `:((` khi đứng riêng) hiện thành ảnh. Tin chỉ có emoji thì không có nền.
 - **Danh tính:** không có tài khoản; `playerId` (UUID) và tên lưu ở `localStorage`. Tên 1–20 ký tự, trùng trong phòng thì thêm ` (2)`. Một `playerId` chỉ một kết nối (mở tab mới thì tab cũ bị thay).
 
 **Kiến trúc** (mỗi room là một Durable Object):
@@ -183,6 +192,8 @@ Chế độ đấu nhiều người (mô tả đầy đủ, các quyết định
 - Chọn từ khóa và lấy giải nghĩa: `worker/keyword.ts` gọi hàm SQL `pick_keyword()` và đọc bảng `words` qua REST bằng `SUPABASE_SECRET_KEY` (secret của Worker). Chấm lượt đoán dùng chung `src/lib/game/guess.ts` với Chơi đơn.
 - Kiểm tra từ đoán: `src/lib/versus/syllable.ts` (danh sách vần, phụ âm đầu, quy tắc chính tả/thanh điệu) cộng `data/syllables.txt` (~250 âm tiết ngoại lệ của từ điển như `gen`, `ku`, sinh bằng `npm run syllables`). Cả hai được đóng gói vào Worker, nên mỗi lượt đoán không gọi Supabase. Chạy lại `npm run syllables` khi từ điển nguồn, kiểu dấu hoặc quy tắc đổi.
 - Trình duyệt: `src/components/versus/RoomProvider.tsx` (đặt ở `app/rooms/[id]/layout.tsx`) giữ **một** WebSocket cho cả `/rooms/[id]` và `/rooms/[id]/versus` nên chuyển trang không đứt kết nối; tự nối lại khi mất mạng. Rời khỏi trang phòng = đóng kết nối = rời phòng.
+- Chat: lịch sử nằm trong trạng thái phòng của Durable Object (`RoomMachine.chat()`), gửi bằng tin riêng (`chat`, và `chat_history` lúc vào phòng) chứ không gửi lại cả trạng thái phòng. Người nhận biết tin của mình qua cờ `mine` do server tính; `playerId` không bao giờ được gửi xuống client. Khung chat (`RoomChat.tsx`) nằm trong `RoomShell.tsx` ở layout của phòng nên không bị dựng lại khi chuyển trang.
+- Emoji: bảng emoji ở `src/lib/versus/emoji-data.ts`, logic thuần (tách tin thành chữ/emoji, gợi ý theo `:x`, chèn mã) ở `src/lib/versus/emoji.ts` (`tests/versus-emoji.test.ts`). Ô nhập, bảng chọn và gợi ý ở `ChatComposer.tsx`. Server không biết gì về emoji: chỉ chuyển chữ.
 - `?tu=` kiểu kiểm thử: `/rooms/1?tu=vũ trụ` rồi bấm Start sẽ chọn sẵn từ khóa, chỉ khi server bật `REVIEW_MODE=1` (production bỏ qua).
 
 **Vận hành:**
@@ -203,7 +214,7 @@ src/
     api/games/[id]/guesses/route.ts  POST: gửi lượt đoán — server kiểm tra, chấm màu, lưu
     api/games/[id]/hints/route.ts    POST: nút Hint — server chọn ngẫu nhiên một ô chưa xanh lá, lưu
     rooms/                           Đấu theo nhóm: page.tsx (Room List), [id]/layout.tsx (hỏi tên nếu chưa có, giữ WebSocket), [id]/page.tsx (Inside Room), [id]/versus/page.tsx
-  components/                        Giao diện (GameScreen là Client Component duy nhất có state; KeywordDialog: chọn từ khóa theo số)
+  components/                        Giao diện (GameScreen là Client Component duy nhất có state; KeywordDialog: chọn từ khóa theo số; ThemeSwitch: nút giao diện sáng/tối)
   lib/
     game/                            Lõi game thuần TypeScript, dùng chung server và client
       vietnamese.ts                  Chữ cái, dấu thanh, chuẩn hoá, đặt dấu
@@ -218,11 +229,12 @@ src/
       supabase-repository.ts         Bản dùng Supabase (secret key)
       games.ts                       Tạo ván, kiểm tra và chấm lượt đoán
       http.ts                        Cookie, JSON, lỗi
-  lib/client/                        api.ts: gọi API; player.ts: playerId + tên trong localStorage (useSavedName tự cập nhật khi đổi tên); clipboard.ts (chữ, ảnh); boardImage.ts (vẽ ảnh ô chữ)
-  lib/versus/                        Đấu theo nhóm: room.ts (máy trạng thái), protocol.ts, config.ts, syllable.ts (kiểm tra từ đoán), names.ts (tên gợi ý), summary.ts (câu kết quả, đồng hồ) — dùng chung worker và giao diện
+  lib/client/                        api.ts: gọi API; player.ts: playerId + tên trong localStorage (useSavedName tự cập nhật khi đổi tên); clipboard.ts (chữ, ảnh); boardImage.ts (vẽ ảnh ô chữ); recentEmoji.ts (emoji dùng gần đây); theme.ts (giao diện sáng/tối; lib/themeScript.ts: script đặt màu trong <head>)
+  lib/versus/                        Đấu theo nhóm: room.ts (máy trạng thái), protocol.ts, config.ts, syllable.ts (kiểm tra từ đoán), names.ts (tên gợi ý), summary.ts (câu kết quả, đồng hồ), emoji.ts + emoji-data.ts (emoji voz trong chat) — dùng chung worker và giao diện
   components/HomeScreen.tsx          Trang chủ: hai ô vuông, hỏi tên trước khi vào đấu theo nhóm
-  components/versus/                 RoomProvider, RoomListScreen, InsideRoomScreen, VersusScreen, ResultDialog, NameDialog (nhập tên, tên gợi ý), NameGate (hỏi tên tại chỗ), ScreenshotButton (chụp ảnh ô chữ)
+  components/versus/                 RoomProvider, RoomListScreen, InsideRoomScreen, VersusScreen, ResultDialog, NameDialog (nhập tên, tên gợi ý), NameGate (hỏi tên tại chỗ), ScreenshotButton (chụp ảnh ô chữ), RoomShell + RoomChat + ChatComposer + EmojiImage (chat của phòng, emoji voz)
   components/DefinitionList.tsx      Danh sách giải nghĩa (dùng chung màn hình kết thúc của Chơi đơn và đấu theo nhóm)
+public/emoji/voz/                    Emoji voz (bộ "popopo" của voz.vn) cho chat của phòng: 54 PNG 48px + bản 96px (*_x2.png)
 worker/                              Worker Cloudflare tùy biến: index.ts (định tuyến), room-do.ts (Durable Object), keyword.ts
 supabase/migrations/                 Schema (bảng words, games; hàm pick_keyword, renumber_keywords)
 data/keywords.json                   Bộ từ khóa (36.362 từ) + từ bị loại và lý do; sinh bằng npm run keywords
@@ -264,6 +276,11 @@ npm version 1.4.0 --no-git-tag-version   # hoặc chỉ định thẳng một s�
 
 Các lệnh sửa `package.json` + `package-lock.json`; số được nhúng vào code lúc build nên phải tăng **trước** `npm run deploy`. Lịch sử bên dưới ghi các thay đổi đáng chú ý; bản vá nhỏ có thể gộp thành một dòng.
 
+- **v1.3.7**: chat trên điện thoại: chạm ra ngoài khung chat thì đóng (lần chạm đó không bấm xuống nút bên dưới).
+- **v1.3.6**: nút **giao diện sáng/tối** ở thanh trên cùng mọi trang (nhớ lựa chọn, không nháy màu khi tải trang). Emoji trong chat đổi sang bộ **popopo của voz.vn** (PNG, có bản 96px), vì bộ "Off" (GIF) bị viền răng cưa trên điện thoại.
+- **v1.3.5**: chat trên laptop là **sidebar thu gọn được**: nút `»` cạnh chữ `Chat` trượt sidebar sang phải (chuyển động mượt), còn dải hẹp có nút mở lại (chấm đỏ khi có tin mới); nhớ trạng thái cho lần sau.
+- **v1.3.4**: chat của phòng có **emoji voz** (bộ "Off" của vozforums.com): bảng chọn emoji (có "Dùng gần đây"), gõ `:x` thì gợi ý 3 emoji gần khớp nhất, mã emoji (kể cả mã cũ của voz như `:sogood:`, `:)`, `:D`) hiện thành ảnh.
+- **v1.3.3**: đấu theo nhóm: **chat của phòng** ở Sảnh chờ và màn đấu. Laptop có khung chat nằm cố định bên phải; điện thoại có bubble bấm để mở/đóng, chấm đỏ khi có tin mới.
 - **v1.3.2**: đấu theo nhóm: đồng hồ thời gian còn lại không còn làm khối `Lượt · còn` xô lệch mỗi giây (mỗi chữ số một ô rộng cố định; hiện từ `9:59`).
 - **v1.3.1**: đấu theo nhóm: đóng popup kết quả (✕/Esc) để **xem lại ô chữ** với nút đếm ngược `Về phòng (Ns)`; nút **`Chụp ảnh màn hình`** copy ảnh ô chữ của mình vào clipboard để chia sẻ; màn đấu hiện **thời gian còn lại** của ván.
 - **v1.3.0**: **trang chủ mới** (`/`) chỉ có hai ô vuông `Chơi đơn` và `Đấu theo nhóm`; Chơi đơn chuyển sang `/solo` (có nút Trang chủ); vào đấu theo nhóm: đã có tên thì vào thẳng, chưa có thì hộp thoại nhập tên có **tên gợi ý ngẫu nhiên**; đổi tên ở trang chủ và Room List; mở thẳng link phòng khi chưa có tên thì hỏi tên tại chỗ. Link chia sẻ từ khóa thành `/solo?id=N` (link cũ `/?id=N` chỉ mở trang chủ).

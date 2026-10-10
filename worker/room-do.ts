@@ -4,9 +4,9 @@ import { wordInfo } from '../src/lib/game/vietnamese';
 import { isRoomId, VERSUS } from '../src/lib/versus/config';
 import { isValidPlayerId, parseClientMessage } from '../src/lib/versus/protocol';
 import type { ServerMessage } from '../src/lib/versus/protocol';
-import { RoomMachine } from '../src/lib/versus/room';
+import { chatMessageFor, RoomMachine } from '../src/lib/versus/room';
 import { createSyllableValidator } from '../src/lib/versus/syllable';
-import type { ActionResult, RoomState, RoomSummary } from '../src/lib/versus/room';
+import type { ActionResult, ChatEntry, RoomState, RoomSummary } from '../src/lib/versus/room';
 import { fetchDefinitions, pickRandomKeyword } from './keyword';
 
 /**
@@ -92,6 +92,7 @@ export class RoomDO extends DurableObject<RoomEnv> {
       // Client tự đóng khi nhận lỗi này; nếu không, webSocketMessage() bên dưới đóng socket chưa vào phòng ngay khi nó gửi tin.
       this.send(server, errorMessage(joined.code, joined.message));
     } else {
+      this.send(server, { type: 'chat_history', messages: this.machine.chatHistoryFor(pid) });
       await this.process(now);
     }
     return new Response(null, { status: 101, webSocket: client });
@@ -143,6 +144,17 @@ export class RoomDO extends DurableObject<RoomEnv> {
         this.machine.leave(pid, now);
         ws.close(1000, 'leave');
         break;
+      case 'chat': {
+        // Chat không đổi trạng thái phòng: chỉ lưu rồi gửi riêng tin mới cho cả phòng (không gửi lại toàn bộ trạng thái).
+        const sent = this.machine.chat(pid, msg.text, now);
+        if (!sent.ok) {
+          result = sent;
+          break;
+        }
+        await this.ctx.storage.put('state', this.machine.state);
+        this.broadcastChat(sent.entry);
+        return;
+      }
     }
     if (!result.ok) {
       this.send(ws, errorMessage(result.code, result.message));
@@ -220,6 +232,14 @@ export class RoomDO extends DurableObject<RoomEnv> {
       const pid = this.pidOf(ws);
       const view = pid ? this.machine.viewFor(pid, now) : null;
       if (view) this.send(ws, { type: 'state', view });
+    }
+  }
+
+  /** Gửi một tin chat mới cho mọi người đang ở trong phòng (mỗi người biết tin đó có phải của mình không). */
+  private broadcastChat(entry: ChatEntry): void {
+    for (const ws of this.ctx.getWebSockets()) {
+      const pid = this.pidOf(ws);
+      if (pid && this.machine.has(pid)) this.send(ws, { type: 'chat', message: chatMessageFor(entry, pid) });
     }
   }
 

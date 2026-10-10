@@ -12,6 +12,7 @@ import EndgameDialog from './EndgameDialog';
 import HelpDialog from './HelpDialog';
 import KeywordDialog from './KeywordDialog';
 import LetterStrip from './LetterStrip';
+import ThemeSwitch from './ThemeSwitch';
 
 const HELP_SEEN_KEY = 'doanchu-seen-help';
 const noopSubscribe = () => () => {};
@@ -182,6 +183,7 @@ export default function GameScreen({ initialGame }: { initialGame: PublicGame })
           )}
           <h1 className="brand">Đoán <span>Chữ</span></h1>
           <span className="topbar-right">
+            <ThemeSwitch />
             <Link className="icon-btn" href="/" aria-label="Trang chủ" title="Trang chủ">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M3 10.5 12 3l9 7.5" />

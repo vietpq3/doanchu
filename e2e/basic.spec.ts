@@ -22,6 +22,63 @@ test('trang chủ có hai ô Chơi đơn và Đấu theo nhóm; Chơi đơn ở 
   await expect(tiles).toHaveCount(2);
 });
 
+test('nút giao diện sáng/tối trên thanh trên cùng: chưa chọn thì theo máy, chọn thì đổi ngay, nhớ cho lần sau và có ở các trang khác', async ({ game, page }) => {
+  const html = page.locator('html');
+  const radio = (name: string) => page.getByRole('radio', { name });
+  const choose = (name: string) => page.locator(`label[title="${name}"]`).click(); // ô radio ẩn đi, bấm vào biểu tượng
+  const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const LIGHT_BG = 'rgb(246, 244, 239)';
+  const DARK_BG = 'rgb(21, 23, 26)';
+
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('/');
+  await expect(radio('Giao diện sáng')).toBeChecked();
+  await expect(html).not.toHaveAttribute('data-theme');
+  await page.emulateMedia({ colorScheme: 'dark' }); // chưa chọn: đổi theo máy
+  await expect(radio('Giao diện tối')).toBeChecked();
+  expect(await background()).toBe(DARK_BG);
+
+  await page.emulateMedia({ colorScheme: 'light' });
+  await choose('Giao diện tối');
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await expect(radio('Giao diện tối')).toBeChecked();
+  expect(await background()).toBe(DARK_BG);
+
+  await game.open(); // trang khác: vẫn tối, nút cũng có ở đây
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await expect(radio('Giao diện tối')).toBeChecked();
+  await page.reload();
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+
+  await page.emulateMedia({ colorScheme: 'dark' }); // máy đang tối nhưng đã chọn sáng thì vẫn sáng
+  await choose('Giao diện sáng');
+  await expect(html).toHaveAttribute('data-theme', 'light');
+  expect(await background()).toBe(LIGHT_BG);
+  await page.goto('/');
+  await expect(radio('Giao diện sáng')).toBeChecked();
+});
+
+test('thanh trên cùng ở màn hình hẹp: không tràn ngang, tên trang không bị cắt, các nút không đè lên nhau', async ({ game, page }) => {
+  for (const width of [320, 375]) {
+    await page.setViewportSize({ width, height: 700 });
+    for (const open of [() => page.goto('/'), () => game.open()]) {
+      await open();
+      await expect(page.locator('.theme-switch')).toBeVisible();
+      const layout = await page.evaluate(() => {
+        const bar = document.querySelector('.topbar .wrap')!;
+        const brand = document.querySelector('.brand')!;
+        const boxes = [...bar.children].map((c) => c.getBoundingClientRect());
+        return {
+          overflow: document.documentElement.scrollWidth > window.innerWidth || bar.scrollWidth > bar.clientWidth + 1,
+          brandCut: brand.scrollWidth > brand.clientWidth + 1,
+          overlap: boxes.some((a, i) => boxes.some((b, j) => j > i && a.right > b.left + 0.5 && b.right > a.left + 0.5)),
+        };
+      });
+      expect(layout, `${width}px ${page.url()}`).toEqual({ overflow: false, brandCut: false, overlap: false });
+    }
+  }
+});
+
 test.describe('lần đầu vào trang', () => {
   test.use({ seenHelp: false });
 
@@ -147,7 +204,12 @@ test('số thứ tự từ khóa (#N) ở góc trên bên trái; bấm vào đ�
   expect(box.x).toBeLessThan(24); // sát mép trái
   expect(box.y + box.height).toBeLessThan((await topbar.boundingBox())!.height + 1); // trong thanh trên cùng
   expect(box.x + box.width).toBeLessThan(brand.x); // bên trái tên game
-  expect(Math.abs(brand.x + brand.width / 2 - viewport.width / 2)).toBeLessThan(2); // tên game vẫn đúng giữa
+  // Tên game đúng giữa thanh ở màn hình rộng. Điện thoại không đủ chỗ cho hai bên rộng bằng nhau (bên phải có nút giao diện, trang chủ,
+  // luật chơi) nên tên game nằm giữa phần còn lại; test "thanh trên cùng ở màn hình hẹp" kiểm tra nó không bị cắt hay đè.
+  await page.setViewportSize({ width: 1024, height: 800 });
+  const wide = (await page.locator('.brand').boundingBox())!;
+  expect(Math.abs(wide.x + wide.width / 2 - 1024 / 2)).toBeLessThan(2);
+  await page.setViewportSize(viewport);
 
   // mở hộp thoại: ô nhập có con trỏ, cho biết khoảng số được chọn
   await game.keywordButton.click();

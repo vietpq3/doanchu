@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Be_Vietnam_Pro } from 'next/font/google';
+import { THEME_INIT_SCRIPT } from '@/lib/themeScript';
 import './globals.css';
 
 const font = Be_Vietnam_Pro({
@@ -22,7 +23,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="vi" className={font.variable}>
+    // suppressHydrationWarning: script trong <head> có thể đã đặt data-theme (giao diện sáng/tối đã chọn) trước khi React hydrate
+    <html lang="vi" className={font.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { saveName, useSavedName } from '@/lib/client/player';
+import ThemeSwitch from './ThemeSwitch';
 import NameDialog from './versus/NameDialog';
 
 /**
@@ -33,7 +34,7 @@ export default function HomeScreen() {
         <div className="wrap">
           <span className="spacer" />
           <h1 className="brand">Đoán <span>Chữ</span></h1>
-          <span className="spacer" />
+          <span className="topbar-right"><ThemeSwitch /></span>
         </div>
       </header>
 

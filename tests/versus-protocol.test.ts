@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { VERSUS, isRoomId, roomName } from '@/lib/versus/config';
 import { createSyllableValidator, isValidSyllable } from '@/lib/versus/syllable';
-import { MAX_MESSAGE_CHARS, isValidPlayerId, parseClientMessage, sanitizeName } from '@/lib/versus/protocol';
+import { MAX_MESSAGE_CHARS, isChatError, isValidPlayerId, parseClientMessage, sanitizeChat, sanitizeName } from '@/lib/versus/protocol';
 
 describe('cấu hình', () => {
   test('5 room, tên Room #n, id hợp lệ chỉ 1..5', () => {
@@ -50,12 +50,21 @@ describe('tin nhắn từ client', () => {
     expect(parse({ type: 'start', word: 'vũ trụ' })).toEqual({ type: 'start', word: 'vũ trụ' });
     expect(parse({ type: 'leave' })).toEqual({ type: 'leave' });
     expect(parse({ type: 'guess', guess: 'vũ trụ' })).toEqual({ type: 'guess', guess: 'vũ trụ' });
+    expect(parse({ type: 'chat', text: 'Chào cả nhà!' })).toEqual({ type: 'chat', text: 'Chào cả nhà!' });
+  });
+
+  test('tin chat dài nhất (kể cả toàn ký tự phải escape trong JSON, hay emoji) vẫn lọt giới hạn kích thước', () => {
+    for (const ch of ['a', '"', '\\', '😀', 'ữ']) {
+      const text = Array.from({ length: VERSUS.chatMax }, () => ch).join('');
+      expect(parse({ type: 'chat', text }), ch).toEqual({ type: 'chat', text });
+    }
   });
 
   test('sai định dạng thì null', () => {
     const bad = [
       'không phải json', '{', 'null', '[]', '42', '"sit"', '{}', { type: 'khác' }, { type: 'sit' }, { type: 'sit', seat: -1 },
       { type: 'sit', seat: VERSUS.seats }, { type: 'sit', seat: 1.5 }, { type: 'sit', seat: '1' }, { type: 'guess' }, { type: 'guess', guess: 5 },
+      { type: 'chat' }, { type: 'chat', text: 5 }, { type: 'chat', text: ['a'] },
     ];
     for (const m of bad) expect(parse(m), JSON.stringify(m)).toBeNull();
     expect(parseClientMessage(123)).toBeNull();
@@ -69,6 +78,37 @@ describe('tin nhắn từ client', () => {
   test('trường thừa/word không phải chuỗi không làm hỏng lệnh', () => {
     expect(parse({ type: 'start', word: 5 })).toEqual({ type: 'start' });
     expect(parse({ type: 'stand', extra: 1 })).toEqual({ type: 'stand' });
+  });
+});
+
+describe('tin chat', () => {
+  test('cắt khoảng trắng, gộp khoảng trắng, giữ nguyên chữ có dấu, emoji và ký tự đặc biệt', () => {
+    expect(sanitizeChat('  Chào   cả nhà!  ')).toBe('Chào cả nhà!');
+    expect(sanitizeChat('<b>đậm</b> & "trích" 😀👍🏽')).toBe('<b>đậm</b> & "trích" 😀👍🏽');
+  });
+
+  test('tin trống/chỉ khoảng trắng/ký tự điều khiển/không phải chuỗi bị từ chối', () => {
+    for (const bad of ['', '   ', '\n\t\r', '\u0000\u0007', '​﻿', null, undefined, 42, {}]) expect(sanitizeChat(bad), JSON.stringify(bad)).toBeNull();
+  });
+
+  test('xuống dòng, ký tự điều khiển và ký tự đảo chiều chữ thành dấu cách', () => {
+    expect(sanitizeChat('dòng 1\ndòng 2\r\ndòng 3')).toBe('dòng 1 dòng 2 dòng 3');
+    expect(sanitizeChat('a\u0000b‮cba⁦x')).toBe('a b cba x');
+  });
+
+  test('chuẩn hoá NFC: chữ có dấu gõ kiểu tổ hợp được gộp lại', () => {
+    expect(sanitizeChat('Việt')).toBe('Việt');
+  });
+
+  test(`tối đa ${VERSUS.chatMax} ký tự (tính theo ký tự, không cắt giữa emoji)`, () => {
+    expect(sanitizeChat('a'.repeat(500))).toBe('a'.repeat(VERSUS.chatMax));
+    expect(Array.from(sanitizeChat('😀'.repeat(300))!)).toHaveLength(VERSUS.chatMax);
+  });
+
+  test('mã lỗi của chat có tiền tố riêng', () => {
+    expect(isChatError('chat_rate_limited')).toBe(true);
+    expect(isChatError('chat_empty')).toBe(true);
+    expect(isChatError('invalid_word')).toBe(false);
   });
 });
 

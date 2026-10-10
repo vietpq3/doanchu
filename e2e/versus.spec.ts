@@ -20,8 +20,9 @@ class Player {
     page.on('pageerror', (err) => this.errors.push(err.message));
   }
 
-  static async create(browser: Browser, baseURL: string, name: string): Promise<Player> {
-    const context = await browser.newContext({ ...devices['Pixel 7'], baseURL, locale: 'vi-VN', permissions: ['clipboard-read', 'clipboard-write'] });
+  /** `device`: mặc định cỡ điện thoại; truyền devices['Desktop Chrome'] để có cỡ màn hình laptop. */
+  static async create(browser: Browser, baseURL: string, name: string, device = devices['Pixel 7']): Promise<Player> {
+    const context = await browser.newContext({ ...device, baseURL, locale: 'vi-VN', permissions: ['clipboard-read', 'clipboard-write'] });
     await context.addInitScript(([key, value]) => {
       localStorage.setItem('doanchu-seen-help', '1');
       localStorage.setItem(key, value);
@@ -43,7 +44,18 @@ class Player {
   get popup() { return this.page.locator('dialog[open]'); }
   /** thanh xem lại ô chữ sau khi đóng popup kết quả */
   get reviewBar() { return this.page.locator('.review-bar'); }
+  get chatPanel() { return this.page.locator('#room-chat'); }
+  get chatBubble() { return this.page.locator('.chat-bubble'); }
+  get chatDot() { return this.page.locator('.chat-bubble .chat-dot'); }
+  /** tin chat có chứa `text` */
+  chatMessage(text: string) { return this.page.locator('.chat-msg').filter({ hasText: text }); }
   sit(n: number) { return this.page.getByRole('button', { name: `Ngồi vào ô ${n}` }).click(); }
+
+  /** Gửi một tin chat (khung chat phải đang hiện). */
+  async chat(text: string) {
+    await this.page.locator('#chat-input').fill(text);
+    await this.page.locator('#chat-input').press('Enter');
+  }
   stand() { return this.page.getByRole('button', { name: /bấm để đứng dậy/ }).click(); }
 
   /** Gõ rồi bấm Enter trong ô đoán của màn Versus (xóa chữ cũ trước: sau lượt bị từ chối chữ vẫn còn để người chơi sửa). */
@@ -431,4 +443,135 @@ test('tải lại trang giữa ván vẫn còn ván của mình', async ({ brows
   await expect(a.page.locator('#guess')).toBeVisible();
 
   for (const p of [a, b, c]) await p.close();
+});
+
+test('chat: laptop có khung chat bên cạnh, điện thoại có bubble (chấm đỏ khi có tin mới, bấm để mở/đóng); chat còn nguyên khi vào ván', async ({ browser }, testInfo) => {
+  const a = await Player.create(browser, base(testInfo), `An-${uid()}`, devices['Desktop Chrome']);
+  const b = await Player.create(browser, base(testInfo), `Binh-${uid()}`);
+  await a.enter(`/rooms/3?tu=${encodeURIComponent(WORD)}`);
+  await b.enter('/rooms/3');
+  const hello = `Chào cả nhà ${uid()}`;
+  const reply = `Chào An ${uid()}`;
+  const during = `Đoán nhanh nào ${uid()}`;
+
+  // laptop: khung chat luôn hiện, nằm bên phải và không che nội dung chính; không có bubble
+  await expect(a.chatPanel).toBeVisible();
+  await expect(a.chatBubble).toHaveCount(0);
+  const main = (await a.page.locator('main').boundingBox())!;
+  const panel = (await a.chatPanel.boundingBox())!;
+  expect(panel.x).toBeGreaterThanOrEqual(main.x + main.width);
+
+  // điện thoại: chỉ có bubble, khung chat đóng, chưa có chấm đỏ
+  await expect(b.chatBubble).toBeVisible();
+  await expect(b.chatPanel).toBeHidden();
+  await expect(b.chatDot).toHaveCount(0);
+
+  // tin mới khi khung chat đang đóng: chấm đỏ; mở ra thì thấy tin (tên người gửi) và hết chấm đỏ
+  await a.chat(hello);
+  await expect(a.chatMessage(hello)).toHaveClass(/\bmine\b/);
+  await expect(b.chatDot).toBeVisible();
+  await b.chatBubble.click();
+  await expect(b.chatPanel).toBeVisible();
+  await expect(b.chatDot).toHaveCount(0);
+  await expect(b.chatMessage(hello)).toContainText(a.name);
+  await expect(b.chatMessage(hello)).not.toHaveClass(/\bmine\b/);
+  await b.chat(reply);
+  await expect(a.chatMessage(reply)).toContainText(b.name);
+
+  // emoji: gõ ":bea" thì hiện tối đa 3 emoji gần khớp nhất; đã gõ từ 2 chữ thì Enter chèn mã; gửi đi thì người khác thấy ảnh
+  const input = a.page.locator('#chat-input');
+  const options = a.page.locator('#chat-emoji-suggest [role="option"]');
+  await input.click();
+  await input.pressSequentially('đẹp :bea');
+  await expect(options.first()).toContainText(':beauty:');
+  expect(await options.count()).toBeLessThanOrEqual(3);
+  await input.press('Enter');
+  await expect(input).toHaveValue('đẹp :beauty: ');
+  await expect(options).toHaveCount(0);
+  await input.press('Enter');
+  await expect(b.page.locator('.chat-msg img[alt=":beauty:"]')).toBeVisible();
+  // Tab cũng chèn; mới gõ 1 chữ (":p", hay gặp như ":v", ":D") thì Enter vẫn gửi tin như bình thường
+  await input.pressSequentially(':bos');
+  await input.press('Tab');
+  await expect(input).toHaveValue(':boss: ');
+  await input.fill('');
+  await input.pressSequentially(':p');
+  await expect(options.first()).toBeVisible();
+  await input.press('Enter');
+  await expect(input).toHaveValue('');
+  await expect(b.page.locator('.chat-text').filter({ hasText: /^:p$/ })).toBeVisible();
+
+  // điện thoại: bảng chọn emoji; chạm một emoji thì chèn mã, bảng vẫn mở và có hàng "Dùng gần đây"; tin chỉ có emoji thì không có nền
+  await b.page.getByRole('button', { name: 'Chọn emoji' }).click();
+  await b.page.getByRole('button', { name: ':boss:', exact: true }).click();
+  await expect(b.page.locator('#chat-input')).toHaveValue(':boss: ');
+  await expect(b.page.locator('#chat-emoji-picker')).toBeVisible();
+  await expect(b.page.locator('.emoji-picker-title', { hasText: 'Dùng gần đây' })).toBeVisible();
+  await b.page.getByRole('button', { name: 'Gửi' }).click();
+  await expect(a.page.locator('.chat-text.emoji-only img[alt=":boss:"]')).toBeVisible();
+  // điện thoại: chạm vào một gợi ý để chèn (trên điện thoại không có Tab, và Enter khi mới gõ 1 chữ là gửi tin)
+  const bInput = b.page.locator('#chat-input');
+  await bInput.tap();
+  await bInput.pressSequentially(':bea');
+  await b.page.locator('#chat-emoji-suggest [role="option"]').first().tap();
+  await expect(bInput).toHaveValue(':beauty: ');
+  await bInput.fill('');
+
+  // bấm bubble lần nữa thì đóng
+  await b.chatBubble.click();
+  await expect(b.chatPanel).toBeHidden();
+  // chạm ra ngoài khung chat cũng đóng; lần chạm đó chỉ để đóng, không bấm xuống ô ngồi bàn ở bên dưới
+  await b.chatBubble.click();
+  await expect(b.chatPanel).toBeVisible();
+  const seat3 = b.page.getByRole('button', { name: 'Ngồi vào ô 3' });
+  const seatBox = (await seat3.boundingBox())!;
+  expect(seatBox.y + seatBox.height).toBeLessThan((await b.chatPanel.boundingBox())!.y); // ô 3 không nằm dưới khung chat
+  await b.page.touchscreen.tap(seatBox.x + seatBox.width / 2, seatBox.y + seatBox.height / 2);
+  await expect(b.chatPanel).toBeHidden();
+  await expect(seat3).toBeVisible(); // ô 3 vẫn trống
+  await expect(b.chatBubble).toHaveAttribute('aria-expanded', 'false');
+
+  // laptop: nút cạnh chữ "Chat" thu gọn sidebar (trượt sang phải, còn dải hẹp); có tin mới thì nút mở lại có chấm đỏ; mở lại thì hết chấm
+  const sidebar = a.page.locator('aside.chat');
+  const sidebarWidth = async () => (await sidebar.boundingBox())!.width;
+  const mainBefore = (await a.page.locator('main').boundingBox())!;
+  await a.page.getByRole('button', { name: 'Thu gọn chat' }).click();
+  await expect(a.chatPanel).toHaveAttribute('inert', '');
+  await expect.poll(sidebarWidth).toBeLessThan(80);
+  expect((await a.page.locator('main').boundingBox())!.x).toBeGreaterThan(mainBefore.x); // nội dung chính dịch ra giữa phần rộng hơn
+  const whileCollapsed = `Có ai không ${uid()}`;
+  await b.chatBubble.click();
+  await b.chat(whileCollapsed);
+  await expect(a.page.locator('.chat-toggle .chat-dot')).toBeVisible();
+  await a.page.getByRole('button', { name: 'Mở chat (có tin nhắn mới)' }).click();
+  await expect(a.page.locator('.chat-toggle .chat-dot')).toHaveCount(0);
+  await expect.poll(sidebarWidth).toBeGreaterThan(300);
+  await expect(a.chatPanel).not.toHaveAttribute('inert');
+  await expect(a.chatMessage(whileCollapsed)).toBeVisible();
+  await b.chatBubble.click();
+  await expect(b.chatPanel).toBeHidden();
+
+  // vào ván: chat vẫn còn lịch sử và gửi được trong lúc đấu
+  await a.sit(1);
+  await b.sit(2);
+  await expect(a.start).toBeEnabled();
+  await a.start.click();
+  await expect(a.page).toHaveURL(/\/rooms\/3\/versus$/, { timeout: 20_000 });
+  await expect(b.page).toHaveURL(/\/rooms\/3\/versus$/, { timeout: 20_000 });
+  await expect(a.chatMessage(hello)).toBeVisible();
+  await expect(a.chatMessage(reply)).toBeVisible();
+  await a.chat(during);
+  await expect(b.chatDot).toBeVisible();
+  await b.chatBubble.click();
+  await expect(b.chatMessage(during)).toBeVisible();
+  await expect(b.chatMessage(hello)).toBeVisible();
+
+  // rời phòng cả hai để ván kết thúc ngay (phòng trống thì chat bị xóa)
+  await a.page.getByRole('button', { name: 'Rời phòng' }).click();
+  await b.chatBubble.click(); // khung chat của B đang mở: đóng trước (chạm ra ngoài lúc này chỉ đóng chat, không bấm được nút bên dưới)
+  await expect(b.chatPanel).toBeHidden();
+  await b.page.getByRole('button', { name: 'Rời phòng' }).click();
+  await expect(b.page).toHaveURL(/\/rooms$/);
+  await a.close();
+  await b.close();
 });
