@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { VERSUS, isRoomId, roomName } from '@/lib/versus/config';
+import { createSyllableValidator, isValidSyllable } from '@/lib/versus/syllable';
 import { MAX_MESSAGE_CHARS, isValidPlayerId, parseClientMessage, sanitizeName } from '@/lib/versus/protocol';
 
 describe('cấu hình', () => {
@@ -68,5 +69,56 @@ describe('tin nhắn từ client', () => {
   test('trường thừa/word không phải chuỗi không làm hỏng lệnh', () => {
     expect(parse({ type: 'start', word: 5 })).toEqual({ type: 'start' });
     expect(parse({ type: 'stand', extra: 1 })).toEqual({ type: 'stand' });
+  });
+});
+
+describe('âm tiết hợp lệ', () => {
+  test('đúng cấu trúc tiếng Việt thì hợp lệ dù từ điển không có (vd tượi), kể cả đủ dạng nguyên âm/phụ âm/thanh', () => {
+    const ok = ['tượi', 'tươi', 'a', 'ơ', 'gì', 'gìn', 'giêng', 'quyên', 'quýt', 'quỳnh', 'yêu', 'yên', 'lý', 'nghiêng', 'cơ', 'kê', 'ghi', 'nghĩ',
+      'ngà', 'khuỷu', 'trường', 'thuyền', 'hoàng', 'xuân', 'việt', 'chiếc', 'bách', 'hợp', 'đắc', 'mạnh'];
+    expect(ok.filter((s) => !isValidSyllable(s))).toEqual([]);
+  });
+
+  test('sai cấu trúc thì không hợp lệ (vd chiơ, aê, yiư)', () => {
+    const bad = ['chiơ', 'aê', 'yiư', 'iên', 'xyz', 'qqq', 'ơư', 'wê', 'f', 'j', 'z', 'bcd', 'thhi', 'tac', 'tạcx', ''];
+    expect(bad.filter(isValidSyllable)).toEqual([]);
+  });
+
+  test('chính tả bắt buộc: c/k, g/gh, ng/ngh', () => {
+    const wrong = ['kơ', 'ka', 'ko', 'ci', 'cê', 'ce', 'ge', 'gê', 'ghơ', 'gha', 'nge', 'nghơ', 'ngha', 'ngi', 'ngae'];
+    expect(wrong.filter(isValidSyllable)).toEqual([]);
+    const right = ['cơ', 'ca', 'co', 'kê', 'ke', 'ki', 'ghe', 'ghê', 'ghi', 'nghe', 'nghi', 'nghê', 'ngơ', 'nga', 'ga', 'gu'];
+    expect(right.filter((s) => !isValidSyllable(s))).toEqual([]);
+  });
+
+  test('vần kết thúc c/ch/p/t chỉ mang thanh sắc hoặc nặng', () => {
+    for (const s of ['tác', 'tạc', 'ách', 'ạch', 'tập', 'tắp', 'mát', 'mạt']) expect(isValidSyllable(s), s).toBe(true);
+    for (const s of ['tàc', 'tảc', 'tãc', 'tac', 'mèt', 'mẻt', 'mat', 'tàp']) expect(isValidSyllable(s), s).toBe(false);
+  });
+
+  test('hai dấu thanh trên một âm tiết thì không hợp lệ', () => {
+    expect(isValidSyllable('tượ́i')).toBe(false);
+  });
+});
+
+describe('kiểm tra từ đoán', () => {
+  const valid = createSyllableValidator('gen\r\nku\nkhmer\n');
+
+  test('mọi âm tiết hợp lệ thì từ hợp lệ, không cần có trong từ điển', () => {
+    for (const w of ['vũ trụ', 'tượi a', 'con gà', 'hòa bình']) expect(valid(w), w).toBe(true);
+  });
+
+  test('chỉ cần một âm tiết sai là cả từ không hợp lệ', () => {
+    for (const w of ['aê yiư', 'chiơ a', 'a chiơ', 'vũ chiơ trụ', 'aêơ yiư']) expect(valid(w), w).toBe(false);
+  });
+
+  test('âm tiết ngoại lệ trong danh sách (kể cả file \r\n) được nhận dù sai cấu trúc; khớp cả dòng, không khớp một phần', () => {
+    for (const w of ['gen', 'ku a', 'khmer', 'a khmer ku']) expect(valid(w), w).toBe(true);
+    expect(isValidSyllable('gen')).toBe(false); // gen: g + e vi phạm quy tắc, chỉ được nhận nhờ danh sách
+    for (const w of ['ge', 'kh', 'khme', 'hmer', 'gen ku2']) expect(valid(w), w).toBe(false);
+  });
+
+  test('chuỗi rỗng, khoảng trắng thừa hoặc xuống dòng không hợp lệ', () => {
+    for (const w of ['', ' ', 'a  a', ' a', 'a ', 'gen\nku']) expect(valid(w), JSON.stringify(w)).toBe(false);
   });
 });

@@ -1,11 +1,19 @@
 import { DurableObject } from 'cloudflare:workers';
+import SYLLABLES_TEXT from '../data/syllables.txt';
 import { wordInfo } from '../src/lib/game/vietnamese';
-import { isRoomId } from '../src/lib/versus/config';
+import { isRoomId, VERSUS } from '../src/lib/versus/config';
 import { isValidPlayerId, parseClientMessage } from '../src/lib/versus/protocol';
 import type { ServerMessage } from '../src/lib/versus/protocol';
 import { RoomMachine } from '../src/lib/versus/room';
+import { createSyllableValidator } from '../src/lib/versus/syllable';
 import type { ActionResult, RoomState, RoomSummary } from '../src/lib/versus/room';
-import { pickRandomKeyword } from './keyword';
+import { fetchDefinitions, pickRandomKeyword } from './keyword';
+
+/**
+ * Kiểm tra lượt đoán: mọi âm tiết đúng cấu trúc tiếng Việt hoặc nằm trong data/syllables.txt (các âm tiết ngoại lệ của từ điển,
+ * xuất bằng npm run syllables). Dựng một lần cho cả Worker. Khi VERSUS.validateGuessWords tắt thì mọi từ đoán đều được chấm.
+ */
+const isValidWord = VERSUS.validateGuessWords ? createSyllableValidator(SYLLABLES_TEXT) : () => true;
 
 /** Biến môi trường worker cần dùng (khai báo tối thiểu để không phụ thuộc file kiểu sinh tự động). */
 export interface RoomEnv {
@@ -36,14 +44,14 @@ const errorMessage = (code: string, message: string): ServerMessage => ({ type: 
  * (không có tranh chấp "ai đoán đúng trước"). Dùng WebSocket hibernation: DO ngủ khi không có sự kiện.
  */
 export class RoomDO extends DurableObject<RoomEnv> {
-  private machine = RoomMachine.create(0);
+  private machine = RoomMachine.create(0, isValidWord);
   private recent = new Map<string, number[]>();
 
   constructor(ctx: DurableObjectState, env: RoomEnv) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       const saved = await ctx.storage.get<RoomState>('state');
-      if (saved) this.machine = new RoomMachine(saved);
+      if (saved) this.machine = new RoomMachine(saved, isValidWord);
       // Sau khi DO khởi động lại, ai không còn socket thì xử lý như mất kết nối.
       const live = new Set<string>();
       for (const ws of ctx.getWebSockets()) {
@@ -186,7 +194,8 @@ export class RoomDO extends DurableObject<RoomEnv> {
     if (needAnswer) {
       await this.save(now); // cho người chơi thấy "đang bắt đầu" ngay
       const answer = reviewWord ?? (await pickRandomKeyword(this.env));
-      if (answer && this.machine.beginMatch(answer, Date.now())) {
+      const definitions = answer ? await fetchDefinitions(this.env, answer) : []; // lấy sẵn, chỉ gửi cho người chơi khi ván kết thúc
+      if (answer && this.machine.beginMatch(answer, definitions, Date.now())) {
         now = Date.now();
       } else {
         this.machine.failStart();

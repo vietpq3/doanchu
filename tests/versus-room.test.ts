@@ -5,12 +5,16 @@ import { RoomMachine } from '@/lib/versus/room';
 const T0 = 1_000_000;
 const ANSWER = 'vũ trụ'; // cấu trúc [2, 3]
 const WRONG = 'ba mơi'; // sai nhưng đúng cấu trúc [2, 3]
+const DEFS = [{ pos: 'Danh từ', text: 'KHOẢNG-KHÔNG-GIAN vô tận chứa các thiên hà', example: 'VÍ-DỤ-VỀ-TỪ' }];
+/** Từ điển giả: chỉ có những từ test cần; mọi từ khác (vd "aê yiư") là vô nghĩa. */
+const DICT = new Set([ANSWER, WRONG, 'ca lơi']); // các từ "hợp lệ" của bộ kiểm tra giả
+const create = (roomId = 1) => RoomMachine.create(roomId, (w) => DICT.has(w));
 
 function join(m: RoomMachine, id: string, name = id, now = T0) {
   expect(m.connect(id, name, now)).toEqual({ ok: true });
 }
 /** hai người a, b ngồi bàn */
-function twoAtTable(m = RoomMachine.create(1)) {
+function twoAtTable(m = create()) {
   join(m, 'a', 'An');
   join(m, 'b', 'Bình');
   expect(m.sit('a', 0)).toEqual({ ok: true });
@@ -22,7 +26,7 @@ function startMatch(m: RoomMachine, answer = ANSWER, now = T0) {
   expect(m.start('a', now)).toEqual({ ok: true });
   const t = now + VERSUS.countdownMs;
   expect(m.tick(t).needAnswer).toBe(true);
-  expect(m.beginMatch(answer, t)).toBe(true);
+  expect(m.beginMatch(answer, DEFS, t)).toBe(true);
   return t;
 }
 const code = (r: { ok: boolean; code?: string }) => (r.ok ? 'ok' : r.code);
@@ -30,13 +34,13 @@ const view = (m: RoomMachine, id: string, now = T0) => m.viewFor(id, now)!;
 
 describe('vào phòng', () => {
   test('người mới vào Sảnh chờ, tên được chuẩn hoá', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     join(m, 'a', '  An   Nguyễn ');
     expect(view(m, 'a')).toMatchObject({ youName: 'An Nguyễn', youSeat: null, lobby: ['An Nguyễn'], phase: 'idle' });
   });
 
   test('tên trống bị từ chối; tên trùng tự thêm hậu tố, không phân biệt hoa thường', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     expect(code(m.connect('a', '   ', T0))).toBe('bad_name');
     expect(m.has('a')).toBe(false);
     join(m, 'a', 'An');
@@ -50,7 +54,7 @@ describe('vào phòng', () => {
   });
 
   test('Sảnh chờ tối đa 10 người; người ngồi bàn không tính vào 10 (phòng tối đa 16)', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     for (let i = 0; i < VERSUS.lobbyMax; i++) join(m, `p${i}`);
     expect(code(m.connect('extra', 'extra', T0))).toBe('room_full');
     for (let i = 0; i < VERSUS.seats; i++) expect(m.sit(`p${i}`, i)).toEqual({ ok: true });
@@ -61,7 +65,7 @@ describe('vào phòng', () => {
   });
 
   test('nối lại (cùng id) không bị tính là người mới và không bị chặn khi phòng đầy', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     for (let i = 0; i < VERSUS.lobbyMax; i++) join(m, `p${i}`);
     expect(m.connect('p3', 'tên khác', T0)).toEqual({ ok: true });
     expect(view(m, 'p3').youName).toBe('p3');
@@ -69,7 +73,7 @@ describe('vào phòng', () => {
   });
 
   test('người chưa vào phòng thì không có view và không làm được gì', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     expect(m.viewFor('ghost', T0)).toBeNull();
     expect(code(m.sit('ghost', 0))).toBe('unknown_player');
     expect(code(m.start('ghost', T0))).toBe('unknown_player');
@@ -78,7 +82,7 @@ describe('vào phòng', () => {
 
 describe('Bàn chơi', () => {
   test('ngồi vào ô trống, đứng dậy về sảnh', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     join(m, 'a', 'An');
     expect(m.sit('a', 2)).toEqual({ ok: true });
     expect(view(m, 'a')).toMatchObject({ youSeat: 2, lobby: [], seats: [null, null, 'An', null, null, null] });
@@ -87,7 +91,7 @@ describe('Bàn chơi', () => {
   });
 
   test('lỗi: ô đã có người, ô sai, đã ngồi rồi, chưa ngồi mà đứng dậy', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     join(m, 'a');
     join(m, 'b');
     expect(m.sit('a', 0)).toEqual({ ok: true });
@@ -99,7 +103,7 @@ describe('Bàn chơi', () => {
   });
 
   test('bàn đầy 6 người thì không còn ô trống', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     for (let i = 0; i < VERSUS.seats + 1; i++) join(m, `p${i}`);
     for (let i = 0; i < VERSUS.seats; i++) expect(m.sit(`p${i}`, i)).toEqual({ ok: true });
     for (let seat = 0; seat < VERSUS.seats; seat++) expect(code(m.sit(`p${VERSUS.seats}`, seat))).toBe('seat_taken');
@@ -108,7 +112,7 @@ describe('Bàn chơi', () => {
 
 describe('Start và đếm ngược', () => {
   test('cần từ 2 người ở bàn; chỉ người ngồi bàn bấm được', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     join(m, 'a');
     join(m, 'b');
     join(m, 'c');
@@ -183,7 +187,7 @@ describe('Start và đếm ngược', () => {
     m.tick(T0 + 5000);
     m.failStart();
     expect(view(m, 'a')).toMatchObject({ phase: 'idle', youSeat: 0 });
-    expect(m.beginMatch(ANSWER, T0 + 5000)).toBe(false); // không còn ở pha starting
+    expect(m.beginMatch(ANSWER, DEFS, T0 + 5000)).toBe(false); // không còn ở pha starting
   });
 
   test('trong lúc chọn từ khóa mà bàn còn dưới 2 người thì hủy ván', () => {
@@ -191,7 +195,7 @@ describe('Start và đếm ngược', () => {
     m.start('a', T0);
     m.tick(T0 + 5000);
     m.disconnect('b', T0 + 5100);
-    expect(m.beginMatch(ANSWER, T0 + 5200)).toBe(false);
+    expect(m.beginMatch(ANSWER, DEFS, T0 + 5200)).toBe(false);
     expect(view(m, 'a').phase).toBe('idle');
   });
 
@@ -253,10 +257,10 @@ describe('ván đấu', () => {
     const lockUntil = t + 2000 + VERSUS.resultLockMs;
     expect(view(m, 'a', t + 2000)).toMatchObject({ phase: 'locked', lockedUntil: lockUntil, youSeat: null, seats: Array(VERSUS.seats).fill(null) });
     expect(view(m, 'a').lobby.sort()).toEqual(['An', 'Bình', 'Chi']);
-    expect(view(m, 'a').game!.result).toEqual({ word: ANSWER, winnerName: 'An', youWon: true, reason: 'won' });
-    expect(view(m, 'b').game!.result).toEqual({ word: ANSWER, winnerName: 'An', youWon: false, reason: 'won' });
+    expect(view(m, 'a').game!.result).toEqual({ word: ANSWER, definitions: DEFS, winnerName: 'An', youWon: true, reason: 'won' });
+    expect(view(m, 'b').game!.result).toEqual({ word: ANSWER, definitions: DEFS, winnerName: 'An', youWon: false, reason: 'won' });
     expect(view(m, 'c').game).toBeNull();
-    expect(view(m, 'c').lastResult).toEqual({ word: ANSWER, winnerName: 'An', endedAt: t + 2000 });
+    expect(view(m, 'c').lastResult).toEqual({ word: ANSWER, winnerName: 'An', endedAt: t + 2000, definitions: DEFS });
     expect(m.nextWakeAt()).toBe(lockUntil);
   });
 
@@ -373,7 +377,7 @@ describe('ván đấu', () => {
   });
 
   test('sau ván, người từ bàn về sảnh luôn được nhận dù sảnh có thể vượt 10; người mới vẫn bị chặn', () => {
-    const m = RoomMachine.create(1);
+    const m = create(1);
     for (let i = 0; i < VERSUS.seats; i++) {
       join(m, `s${i}`);
       m.sit(`s${i}`, i);
@@ -381,7 +385,7 @@ describe('ván đấu', () => {
     for (let i = 0; i < VERSUS.lobbyMax; i++) join(m, `l${i}`);
     expect(m.start('s0', T0)).toEqual({ ok: true });
     m.tick(T0 + 5000);
-    m.beginMatch(ANSWER, T0 + 5000);
+    m.beginMatch(ANSWER, DEFS, T0 + 5000);
     m.guess('s0', ANSWER, T0 + 6000);
     expect(view(m, 'l0').lobby).toHaveLength(VERSUS.seats + VERSUS.lobbyMax);
     expect(code(m.connect('late', 'late', T0 + 7000))).toBe('room_full');
@@ -423,6 +427,133 @@ describe('khôi phục sau khi khởi động lại (tiếp)', () => {
   });
 });
 
+describe('lượt đoán phải là từ hợp lệ', () => {
+  const NONSENSE = 'aê yiư'; // đúng cấu trúc [2, 3] nhưng vô nghĩa: chỉ để loại trừ chữ cái
+
+  test('từ không hợp lệ bị từ chối, báo lý do chung chung và không mất lượt', () => {
+    const m = twoAtTable();
+    const t = startMatch(m);
+    const res = m.guess('a', NONSENSE, t + 1000);
+    expect(res).toEqual({ ok: false, code: 'invalid_word', message: 'Từ này không hợp lệ' });
+    expect(view(m, 'a').game!.players[0].turns).toBe(0);
+    expect(view(m, 'a').game!.yourRows).toEqual([]);
+    expect(view(m, 'b').game!.players[0].turns).toBe(0); // đối thủ cũng không thấy lượt nào
+    // sau đó vẫn đoán bình thường
+    expect(m.guess('a', WRONG, t + 2000)).toEqual({ ok: true });
+    expect(view(m, 'a').game!.players[0].turns).toBe(1);
+  });
+
+  test('lặp lại nhiều lần từ vô nghĩa không bao giờ làm hết 6 lượt', () => {
+    const m = twoAtTable();
+    const t = startMatch(m);
+    for (let i = 0; i < VERSUS.maxTurns + 3; i++) expect(code(m.guess('a', NONSENSE, t + 1000 + i))).toBe('invalid_word');
+    expect(view(m, 'a').game).toMatchObject({ yourStatus: 'playing', yourRows: [] });
+  });
+
+  test('kiểm tra cấu trúc trước: thiếu chữ/sai cấu trúc/ký tự lạ báo lỗi cũ, không phải "không hợp lệ"', () => {
+    const m = twoAtTable();
+    const t = startMatch(m);
+    expect(code(m.guess('a', 'aê', t + 1000))).toBe('incomplete');
+    expect(code(m.guess('a', 'aê yiưx', t + 1000))).toBe('wrong_structure');
+    expect(code(m.guess('a', 'wê yiư', t + 1000))).toBe('invalid_chars');
+  });
+
+  test('kiểu dấu mới/cũ như nhau: kiểm tra trên dạng đã chuẩn hoá', () => {
+    const dict = new Set(['hòa bình']); // chỉ nhận dạng kiểu dấu cũ
+    const m = RoomMachine.create(1, (w) => dict.has(w));
+    join(m, 'a', 'An');
+    join(m, 'b', 'Bình');
+    m.sit('a', 0);
+    m.sit('b', 1);
+    m.start('a', T0);
+    m.tick(T0 + 5000);
+    m.beginMatch('hòa bình', DEFS, T0 + 5000);
+    expect(m.guess('b', 'hoà bình', T0 + 6000)).toEqual({ ok: true }); // gõ kiểu mới vẫn đúng và là đáp án
+    expect(view(m, 'a').game!.result).toMatchObject({ youWon: false, winnerName: 'Bình' });
+  });
+
+  test('đáp án luôn được chấp nhận dù bộ kiểm tra (vì lý do nào đó) không nhận nó', () => {
+    const m = RoomMachine.create(1, () => false); // bộ kiểm tra từ chối tất cả: mọi từ khác đều bị từ chối
+    join(m, 'a', 'An');
+    join(m, 'b', 'Bình');
+    m.sit('a', 0);
+    m.sit('b', 1);
+    m.start('a', T0);
+    m.tick(T0 + 5000);
+    m.beginMatch(ANSWER, DEFS, T0 + 5000);
+    expect(code(m.guess('b', WRONG, T0 + 6000))).toBe('invalid_word');
+    expect(m.guess('a', ANSWER, T0 + 7000)).toEqual({ ok: true });
+    expect(view(m, 'a').phase).toBe('locked');
+  });
+});
+
+describe('giải nghĩa từ khóa', () => {
+  const MEANING = 'KHOẢNG-KHÔNG-GIAN';
+
+  test('khi ván kết thúc: kết quả của người chơi và "lượt trước" của cả phòng đều có giải nghĩa', () => {
+    const m = twoAtTable();
+    join(m, 'c', 'Chi');
+    const t = startMatch(m);
+    m.guess('a', ANSWER, t + 1000);
+    for (const id of ['a', 'b']) expect(view(m, id).game!.result!.definitions).toEqual(DEFS);
+    expect(view(m, 'c').lastResult!.definitions).toEqual(DEFS); // người ở sảnh thấy giải nghĩa của lượt vừa xong
+    expect(view(m, 'c').lastResult).toMatchObject({ word: ANSWER, winnerName: 'An' });
+  });
+
+  test('ván không có người thắng cũng có giải nghĩa', () => {
+    const m = twoAtTable();
+    const t = startMatch(m);
+    m.tick(t + VERSUS.matchMaxMs);
+    expect(view(m, 'a').game!.result).toMatchObject({ winnerName: null, reason: 'timeout', definitions: DEFS });
+    expect(view(m, 'a').lastResult!.definitions).toEqual(DEFS);
+  });
+
+  test('giải nghĩa không lộ trước khi ván kết thúc (nghĩa có thể nhắc tới chính từ khóa)', () => {
+    const m = twoAtTable();
+    join(m, 'c', 'Chi');
+    const t = startMatch(m);
+    m.guess('a', WRONG, t + 1000);
+    for (const id of ['a', 'b', 'c']) {
+      const json = JSON.stringify(view(m, id, t + 2000));
+      expect(json, `view của ${id}`).not.toContain(MEANING);
+      expect(json, `view của ${id}`).not.toContain('VÍ-DỤ-VỀ-TỪ');
+    }
+    expect(JSON.stringify(m.state)).toContain(MEANING); // chỉ nằm trong state phía server
+    m.guess('b', ANSWER, t + 3000);
+    expect(JSON.stringify(view(m, 'a'))).toContain(MEANING);
+  });
+
+  test('lượt trước vẫn còn giải nghĩa sau khi phòng mở lại, đến khi có lượt mới', () => {
+    const m = twoAtTable();
+    const t = startMatch(m);
+    m.guess('a', ANSWER, t + 1000);
+    m.tick(t + 1000 + VERSUS.resultLockMs);
+    expect(view(m, 'a')).toMatchObject({ phase: 'idle', game: null, lastResult: { word: ANSWER, definitions: DEFS } });
+  });
+
+  test('từ chưa có giải nghĩa: danh sách rỗng', () => {
+    const m = twoAtTable();
+    m.start('a', T0);
+    m.tick(T0 + 5000);
+    m.beginMatch(ANSWER, [], T0 + 5000);
+    m.guess('a', ANSWER, T0 + 6000);
+    expect(view(m, 'b').game!.result!.definitions).toEqual([]);
+    expect(view(m, 'b').lastResult!.definitions).toEqual([]);
+  });
+
+  test('trạng thái do bản cũ lưu (chưa có giải nghĩa) vẫn đọc được, định nghĩa là rỗng', () => {
+    const m = twoAtTable();
+    const t = startMatch(m);
+    m.guess('a', ANSWER, t + 1000);
+    const old = JSON.parse(JSON.stringify(m.state));
+    delete old.match.definitions;
+    delete old.lastResult.definitions;
+    const restored = new RoomMachine(old, (w) => DICT.has(w));
+    expect(view(restored, 'b', t + 2000).lastResult).toEqual({ word: ANSWER, winnerName: 'An', endedAt: t + 1000, definitions: [] });
+    expect(view(restored, 'b', t + 2000).game!.result!.definitions).toEqual([]);
+  });
+});
+
 describe('nextWakeAt và tổng quan phòng', () => {
   test('mỗi pha có mốc đánh thức đúng', () => {
     const m = twoAtTable();
@@ -431,14 +562,14 @@ describe('nextWakeAt và tổng quan phòng', () => {
     expect(m.nextWakeAt()).toBe(T0 + 5000);
     m.tick(T0 + 5000);
     expect(m.nextWakeAt()).toBeNull(); // đang chọn từ khóa (bất đồng bộ), không cần alarm
-    m.beginMatch(ANSWER, T0 + 5100);
+    m.beginMatch(ANSWER, DEFS, T0 + 5100);
     expect(m.nextWakeAt()).toBe(T0 + 5100 + VERSUS.matchMaxMs);
     m.disconnect('a', T0 + 6000);
     expect(m.nextWakeAt()).toBe(T0 + 6000 + VERSUS.reconnectGraceMs);
   });
 
   test('summary: số người và trạng thái', () => {
-    const m = RoomMachine.create(3);
+    const m = create(3);
     expect(m.summary()).toEqual({ id: 3, name: 'Room #3', players: 0, status: 'waiting' });
     expect(m.isEmpty).toBe(true);
     twoAtTable(m);
@@ -481,7 +612,7 @@ describe('không lộ thông tin trước khi ván kết thúc', () => {
     m.start('a', T0, ANSWER);
     for (const letter of ANSWER_ONLY_LETTERS) expect(JSON.stringify(view(m, 'a'))).not.toContain(letter); // kể cả từ chọn sẵn (REVIEW_MODE) cũng không lộ
     m.tick(T0 + 5000);
-    m.beginMatch(ANSWER, T0 + 5000);
+    m.beginMatch(ANSWER, DEFS, T0 + 5000);
     expect(JSON.stringify(view(m, 'b'))).not.toContain(ANSWER);
     m.guess('a', ANSWER, T0 + 6000);
     expect(JSON.stringify(view(m, 'b'))).toContain('vũ trụ');

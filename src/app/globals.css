@@ -256,8 +256,6 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8
 .name-tag.you { border-color: var(--accent); color: var(--accent); }
 .lock-badge { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--c-absent); color: #fff; font-size: .72rem; font-weight: 700; vertical-align: middle; }
 
-.table-layout { display: grid; gap: 12px; }
-@media (min-width: 520px) { .table-layout { grid-template-columns: 1fr 190px; align-items: start; } }
 .seats { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .seat {
   width: 100%; min-height: 64px; padding: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
@@ -274,6 +272,9 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8
 .last-result { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: .9rem; }
 .last-result h3 { margin: 0 0 4px; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .last-result p { margin: 0; }
+.last-result .defs { margin-top: 10px; }
+.last-result .source-note { margin-top: 10px; }
+.endgame .answer-label { margin-top: 4px; }
 .start-btn { width: 100%; min-height: 52px; border-radius: 12px; font-size: 1.05rem; }
 
 .opponents { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }

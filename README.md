@@ -167,15 +167,18 @@ Chế độ đấu nhiều người (mô tả đầy đủ, các quyết định
 - **Sức chứa:** Sảnh chờ nhận tối đa 10 người khi *vào* room; Bàn chơi có 6 ô và người ngồi bàn không tính vào 10 (người từ bàn quay về sảnh luôn được nhận). Bấm ô trống để ngồi, bấm tên mình để đứng dậy.
 - **Start:** bật khi có từ 2 người ở bàn, ai ở bàn cũng bấm được. Đếm ngược 5 giây ngay trên nút (`Start after 5s`…); **mọi thay đổi số người ở bàn** (ngồi, đứng, rời, mất kết nối) huỷ ngay, phải bấm lại. Hết 5 giây thì khoá bàn, chọn từ khóa ngẫu nhiên và đưa những người ở bàn sang màn Versus.
 - **Trong ván:** mỗi người đoán riêng (luật như Chơi đơn, không Hint/New game/`#N`); đối thủ chỉ thấy tên + số lượt (`lượt 3/6`), không thấy chữ/màu.
+- **Từ đoán phải hợp lệ (không đòi có nghĩa):** chỉ ở đấu theo nhóm. Mọi âm tiết của từ đoán phải đúng cấu trúc tiếng Việt (phụ âm đầu + vần + thanh, bắt buộc đúng chính tả `c/k`, `g/gh`, `ng/ngh`) hoặc có trong từ điển; nếu không báo "Từ này không hợp lệ" (chung chung, không nêu âm tiết sai) và không mất lượt. Để không ai nhập chuỗi như `aê yiư`, `chiơ` chỉ nhằm loại trừ chữ cái; `tượi` (không có trong từ điển) vẫn hợp lệ. Từ khóa luôn được chấp nhận. Hạn chế: âm tiết đúng cấu trúc ghép vô nghĩa (vd `ba bư`) vẫn qua. Tắt khẩn cấp: `VERSUS.validateGuessWords = false` ở `src/lib/versus/config.ts`.
 - **Kết thúc ván** khi có người đoán đúng, hoặc không còn ai đang đoán (mọi người hết 6 lượt hoặc đã rời), hoặc quá 10 phút. Người rời giữa ván bị loại (nút Rời phòng: ngay; mất kết nối: chờ 30 giây nối lại, tải lại trang không mất ván); người còn lại đoán tiếp, kể cả chỉ còn một người.
-- **Sau ván:** mọi người về Sảnh chờ, Bàn chơi trống, phòng khoá 10 giây; kết quả lượt trước (từ khóa + người thắng/"Không ai tìm ra") hiện cạnh Bàn chơi.
+- **Giải nghĩa:** popup kết quả hiện giải nghĩa từ khóa (tối đa 4 nghĩa, như Chơi đơn). Giải nghĩa được lấy lúc bắt đầu ván và chỉ gửi xuống khi ván kết thúc.
+- **Sau ván:** mọi người về Sảnh chờ, Bàn chơi trống, phòng khoá 10 giây; khối **Lượt trước** (từ khóa + giải nghĩa + người thắng/"Không ai tìm ra") nằm **dưới nút Start** để Start không bị đẩy xuống.
 - **Danh tính:** không có tài khoản; `playerId` (UUID) và tên lưu ở `localStorage`. Tên 1–20 ký tự, trùng trong phòng thì thêm ` (2)`. Một `playerId` chỉ một kết nối (mở tab mới thì tab cũ bị thay).
 
 **Kiến trúc** (mỗi room là một Durable Object):
 - `worker/index.ts` là `main` của Worker (`wrangler.jsonc`): chuyển WebSocket `GET /ws/rooms/:id` vào Durable Object của room (chỉ nhận `Origin` cùng host), trả `GET /api/rooms` (danh sách room, nhớ 2 giây), mọi request khác giao cho OpenNext như trước.
 - `worker/room-do.ts` (`RoomDO`, nền SQLite, WebSocket hibernation) là vỏ mỏng: chuyển tin nhắn thành lời gọi `RoomMachine`, lưu trạng thái, đặt alarm cho các mốc thời gian (đếm ngược, khoá phòng, hết giờ, hết hạn nối lại), gửi cho **mỗi người đúng phần họ được thấy**, giới hạn tần suất tin nhắn. Mọi sự kiện đi qua một DO nên được xử lý tuần tự (không có tranh chấp "ai đoán đúng trước").
 - `src/lib/versus/room.ts` (`RoomMachine`) là toàn bộ luật của phòng, hàm thuần nhận `now` từ ngoài nên test bằng đồng hồ giả (`tests/versus-room.test.ts`). `protocol.ts`: tin nhắn client↔server và `RoomView`, **không bao giờ chứa đáp án hay chữ của lượt đoán người khác** trước khi ván kết thúc (có test kiểm tra). `config.ts`: hằng số.
-- Chọn từ khóa: `worker/keyword.ts` gọi hàm SQL `pick_keyword()` qua REST bằng `SUPABASE_SECRET_KEY` (secret của Worker). Chấm lượt đoán dùng chung `src/lib/game/guess.ts` với Chơi đơn.
+- Chọn từ khóa và lấy giải nghĩa: `worker/keyword.ts` gọi hàm SQL `pick_keyword()` và đọc bảng `words` qua REST bằng `SUPABASE_SECRET_KEY` (secret của Worker). Chấm lượt đoán dùng chung `src/lib/game/guess.ts` với Chơi đơn.
+- Kiểm tra từ đoán: `src/lib/versus/syllable.ts` (danh sách vần, phụ âm đầu, quy tắc chính tả/thanh điệu) cộng `data/syllables.txt` (~250 âm tiết ngoại lệ của từ điển như `gen`, `ku`, sinh bằng `npm run syllables`). Cả hai được đóng gói vào Worker, nên mỗi lượt đoán không gọi Supabase. Chạy lại `npm run syllables` khi từ điển nguồn, kiểu dấu hoặc quy tắc đổi.
 - Trình duyệt: `src/components/versus/RoomProvider.tsx` (đặt ở `app/rooms/[id]/layout.tsx`) giữ **một** WebSocket cho cả `/rooms/[id]` và `/rooms/[id]/versus` nên chuyển trang không đứt kết nối; tự nối lại khi mất mạng. Rời khỏi trang phòng = đóng kết nối = rời phòng.
 - `?tu=` kiểu kiểm thử: `/rooms/1?tu=vũ trụ` rồi bấm Start sẽ chọn sẵn từ khóa, chỉ khi server bật `REVIEW_MODE=1` (production bỏ qua).
 
@@ -214,12 +217,14 @@ src/
   lib/client/                        api.ts: gọi API; player.ts: playerId + tên trong localStorage; clipboard.ts
   lib/versus/                        Đấu theo nhóm: room.ts (máy trạng thái), protocol.ts, config.ts (dùng chung worker và giao diện)
   components/versus/                 RoomProvider, RoomListScreen, InsideRoomScreen, VersusScreen, ResultDialog, VersusEntry
+  components/DefinitionList.tsx      Danh sách giải nghĩa (dùng chung màn hình kết thúc của Chơi đơn và đấu theo nhóm)
 worker/                              Worker Cloudflare tùy biến: index.ts (định tuyến), room-do.ts (Durable Object), keyword.ts
 supabase/migrations/                 Schema (bảng words, games; hàm pick_keyword, renumber_keywords)
 data/keywords.json                   Bộ từ khóa (36.362 từ) + từ bị loại và lý do; sinh bằng npm run keywords
+data/syllables.txt                   Âm tiết ngoại lệ của từ điển (~250) để kiểm tra từ đoán ở đấu theo nhóm; sinh bằng npm run syllables
 data/keyword-exclusions.json         Danh sách loại trừ (từ phụ trợ, danh từ riêng, exclude/keep): cấu hình được
 data/keyword-auxiliary-candidates.txt Từ có nghĩa X của Wiktionary, để cân nhắc loại sau (sinh ra)
-scripts/                             db-migrate, seed-supabase, export-keywords, keyword-exclusions, dictionary-source
+scripts/                             db-migrate, seed-supabase, export-keywords, export-syllables, keyword-exclusions, dictionary-source
 tests/                               Vitest (tests/memory-repository.ts: dữ liệu giả cho test)
 e2e/, playwright.config.ts           Test E2E (Playwright; versus.spec.ts: nhiều trình duyệt cùng vào một room)
 wrangler.jsonc, open-next.config.ts  Cấu hình Cloudflare Workers
@@ -254,6 +259,9 @@ npm version 1.4.0 --no-git-tag-version   # hoặc chỉ định thẳng một s�
 
 Các lệnh sửa `package.json` + `package-lock.json`; số được nhúng vào code lúc build nên phải tăng **trước** `npm run deploy`. Lịch sử bên dưới ghi các thay đổi đáng chú ý; bản vá nhỏ có thể gộp thành một dòng.
 
+- **v1.2.3**: đấu theo nhóm: bật lại kiểm tra từ đoán ở mức **hợp lệ** (không đòi có nghĩa): mọi âm tiết đúng cấu trúc tiếng Việt hoặc có trong từ điển (`tượi` hợp lệ, `chiơ` không), thông báo "Từ này không hợp lệ".
+- **v1.2.2**: đấu theo nhóm: **tạm tắt** kiểm tra từ đoán phải có trong từ điển (cờ `VERSUS.validateGuessWords = false`; từ đúng nghĩa nhưng từ điển không có không còn bị từ chối).
+- **v1.2.1**: đấu theo nhóm: từ đoán phải có trong từ điển (chặn nhập chuỗi vô nghĩa để loại trừ chữ cái); popup kết quả và khối `Lượt trước` có giải nghĩa từ khóa; `Lượt trước` nằm dưới nút `Start`.
 - **v1.2.0**: **đấu theo nhóm**: ô tên + nút `Đấu theo nhóm` ở Chơi đơn, `/rooms` (5 room), Inside Room (Sảnh chờ ≤ 10 người, Bàn chơi 6 ô, Start đếm ngược 5 giây), màn Versus và popup kết quả (mỗi room là một Durable Object). Xem mục [Đấu theo nhóm](#đấu-theo-nhóm).
 - **v1.1.2**: nút **"Thách bạn bè đoán từ này 🔗"** ở màn hình kết thúc: copy link `/?id=N` của từ khóa vào clipboard để gửi cho bạn bè.
 - **v1.1.1**: link `/?id=N` vào thẳng từ khóa số N; danh sách loại trừ từ khóa (từ phụ trợ, danh từ riêng): kho còn 36.362 từ (trước đó 40.709), số `#N` được đánh lại.

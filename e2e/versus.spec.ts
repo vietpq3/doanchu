@@ -2,9 +2,13 @@
 // Mỗi test dùng một room riêng để không ảnh hưởng nhau. Cần server có Durable Object (npm run preview, hoặc bản đã deploy);
 // `npm run dev` (Node) không chạy được tính năng này. Các test cần chọn sẵn từ khóa tự bỏ qua khi server tắt REVIEW_MODE.
 import { devices, expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { VERSUS } from '../src/lib/versus/config';
 import { reviewModeEnabled } from './fixtures';
 
 const WORD = 'vũ trụ'; // cấu trúc [2, 3]
+const WRONG = 'an tâm'; // từ thật (có trong từ điển), cùng cấu trúc [2, 3] nhưng không phải đáp án
+const NONSENSE = 'aê yiư'; // cùng cấu trúc [2, 3] nhưng không hợp lệ (không có vần aê, yiư): bị từ chối khi VERSUS.validateGuessWords bật
+const UNUSUAL = 'bơ tưi'; // cùng cấu trúc [2, 3], không có nghĩa nhưng mỗi âm tiết đúng cấu trúc tiếng Việt: luôn được chấm
 const NAME_KEY = 'doanchu-player-name';
 
 const uid = () => Math.random().toString(36).slice(2, 6);
@@ -199,9 +203,31 @@ test('lượt không hợp lệ không mất lượt; hết 6 lượt cả hai t
   await expect(a.page.locator('.row .cell[data-status]')).toHaveCount(0);
   await expect(a.page.locator('.meta')).toContainText('Lượt 1/6');
 
-  const wrong = 'ba mơi'; // sai nhưng đúng cấu trúc
-  for (let i = 0; i < 6; i++) {
-    await a.guess(wrong);
+  // chuỗi không hợp lệ (đúng cấu trúc ô chữ, chỉ để loại trừ chữ cái)
+  const validate = VERSUS.validateGuessWords;
+  await a.guess(NONSENSE);
+  if (validate) {
+    // kiểm tra từ đoán đang bật: bị từ chối, thông báo chung chung, không mất lượt
+    await expect(a.page.locator('.toast')).toHaveText('Từ này không hợp lệ');
+    await expect(a.page.locator('.row .cell[data-status]')).toHaveCount(0);
+    await expect(a.page.locator('.meta')).toContainText('Lượt 1/6');
+    await expect(b.opponents.filter({ hasText: a.name })).toContainText('lượt 0/6'); // đối thủ cũng không thấy lượt nào
+  } else {
+    // đang tắt: chuỗi này vẫn được chấm và tính một lượt
+    await expect(a.page.locator('.row .cell[data-status]')).toHaveCount(5);
+    await expect(a.page.locator('.meta')).toContainText('Lượt 2/6');
+  }
+  let spent = validate ? 0 : 1; // số lượt đã dùng
+
+  // từ không có nghĩa nhưng đúng cấu trúc tiếng Việt vẫn hợp lệ: được chấm và tính một lượt
+  await a.guess(UNUSUAL);
+  spent++;
+  await expect(a.page.locator('.row .cell[data-status]')).toHaveCount(spent * 5);
+  await expect(a.page.locator('.meta')).toContainText(`Lượt ${spent + 1}/6`);
+  await expect(b.opponents.filter({ hasText: a.name })).toContainText(`lượt ${spent}/6`);
+
+  for (let i = spent; i < 6; i++) {
+    await a.guess(WRONG);
     await expect(a.page.locator('.row .cell[data-status]')).toHaveCount((i + 1) * 5);
   }
   await expect(a.page.getByText('Bạn đã hết lượt đoán')).toBeVisible();
@@ -209,17 +235,23 @@ test('lượt không hợp lệ không mất lượt; hết 6 lượt cả hai t
   await expect(b.opponents.filter({ hasText: a.name })).toContainText('lượt 6/6');
 
   for (let i = 0; i < 6; i++) {
-    await b.guess(wrong);
+    await b.guess(WRONG);
     await expect(b.page.locator('.row .cell[data-status]')).toHaveCount((i + 1) * 5);
   }
   for (const p of [a, b]) {
     await expect(p.popup).toContainText('Không ai tìm ra từ khóa. Từ khóa là vũ trụ');
     await expect(p.popup.getByRole('button', { name: /^OK \(\d+s\)$/ })).toBeVisible();
+    // giải nghĩa từ khóa ngay trong popup (như Chơi đơn), kèm ghi nguồn
+    await expect(p.popup.getByText('Giải nghĩa', { exact: true })).toBeVisible();
+    await expect(p.popup.locator('.defs li').first()).toBeVisible();
+    await expect(p.popup.locator('.source-note')).toContainText('CC BY-SA 4.0');
   }
   await a.popup.getByRole('button', { name: /^OK/ }).click();
   await expect(a.page).toHaveURL(/\/rooms\/4$/);
   await expect(a.page.locator('.last-result')).toContainText('Không ai tìm ra từ khóa');
   await expect(a.page.locator('.last-result')).toContainText(WORD);
+  await expect(a.page.locator('.last-result .defs li').first()).toBeVisible(); // lượt trước cũng có giải nghĩa
+  await expect(a.page.locator('.toast')).toBeHidden(); // thông báo lỗi của màn Versus ("Từ này không hợp lệ") không hiện lại ở đây
 
   for (const p of [a, b]) await p.close();
 });
@@ -249,7 +281,7 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   await expect(b.opponents.filter({ hasText: a.name })).toContainText('lượt 0/6');
 
   // b đoán sai một lượt: a thấy số lượt của b nhưng không thấy chữ của b
-  await b.guess('ba mơi');
+  await b.guess(WRONG);
   await expect(a.opponents.filter({ hasText: b.name })).toContainText('lượt 1/6');
   await expect(a.page.locator('.row .cell[data-status]')).toHaveCount(0);
   await expect(b.page.locator('.row .cell[data-status]')).toHaveCount(5);
@@ -259,7 +291,9 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   await expect(a.popup).toContainText('Bạn đã thắng! Từ khóa là vũ trụ');
   await expect(b.popup).toContainText(`Bạn đã thua! Từ khóa là vũ trụ. Người chiến thắng là: ${a.name}`);
   await expect(b.popup.getByRole('button', { name: /^OK \(\d+s\)$/ })).toBeVisible();
+  for (const p of [a, b]) await expect(p.popup.locator('.defs li').first()).toBeVisible(); // popup có giải nghĩa từ khóa
   await expect(c.page.locator('.last-result')).toContainText(a.name); // người ở sảnh cũng thấy kết quả
+  await expect(c.page.locator('.last-result .defs li').first()).toBeVisible(); // và cả giải nghĩa
 
   // OK (hoặc hết 10s): về Inside Room, mọi người về Sảnh chờ, Bàn chơi trống, kết quả lượt trước ở cạnh bàn
   await b.popup.getByRole('button', { name: /^OK/ }).click();
@@ -267,7 +301,13 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   await expect(b.page.locator('.seat.empty')).toHaveCount(6);
   await expect(b.page.locator('.last-result')).toContainText(WORD);
   await expect(b.page.locator('.last-result')).toContainText(a.name);
+  await expect(b.page.locator('.last-result .defs li').first()).toBeVisible();
   await expect(b.lobbyTags).toHaveCount(3);
+  // "Lượt trước" nằm DƯỚI nút Start (Start không bị đẩy xuống dưới giải nghĩa) và Start vẫn thấy được mà không phải cuộn
+  const startBox = (await b.start.boundingBox())!;
+  const lastBox = (await b.page.locator('.last-result').boundingBox())!;
+  expect(lastBox.y).toBeGreaterThan(startBox.y + startBox.height - 1);
+  await expect(b.start).toBeInViewport();
   // a để popup tự hết giờ (10s) rồi tự về Inside Room
   await expect(a.page).toHaveURL(/\/rooms\/2$/, { timeout: 15_000 });
   await expect(a.page.locator('.seat.empty')).toHaveCount(6);
@@ -286,7 +326,7 @@ test('tải lại trang giữa ván vẫn còn ván của mình', async ({ brows
   const { a, b } = await twoAtTable(browser, base(testInfo), 1, `/rooms/1?tu=${encodeURIComponent(WORD)}`);
   await a.start.click();
   await expect(a.page).toHaveURL(/\/rooms\/1\/versus$/, { timeout: 15_000 });
-  await a.guess('ba mơi');
+  await a.guess(WRONG);
   await expect(a.page.locator('.row .cell[data-status]')).toHaveCount(5);
 
   await a.page.reload(); // mất kết nối rồi nối lại trong 30 giây

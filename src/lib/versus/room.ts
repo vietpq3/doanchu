@@ -8,6 +8,7 @@
  */
 import { evaluateGuess } from '../game/guess';
 import type { Status } from '../game/scoring';
+import type { Definition } from '../game/types';
 import { wordInfo } from '../game/vietnamese';
 import { roomName, VERSUS } from './config';
 import { sanitizeName } from './protocol';
@@ -33,6 +34,8 @@ export interface MatchPlayer {
 export interface Match {
   /** đáp án: CHỈ nằm ở server */
   answer: string;
+  /** giải nghĩa đáp án (lấy sẵn lúc bắt đầu ván): CHỈ gửi cho người chơi khi ván kết thúc */
+  definitions: Definition[];
   structure: number[];
   startedAt: number;
   endsAt: number;
@@ -56,7 +59,7 @@ export interface RoomState {
 export type ActionError =
   | 'bad_name' | 'room_full' | 'unknown_player' | 'table_locked' | 'already_seated' | 'bad_seat' | 'seat_taken'
   | 'not_seated' | 'not_enough_players' | 'already_counting' | 'room_busy' | 'no_game' | 'not_in_match' | 'already_done'
-  | 'bad_request' | 'invalid_chars' | 'incomplete' | 'wrong_structure';
+  | 'bad_request' | 'invalid_chars' | 'incomplete' | 'wrong_structure' | 'invalid_word';
 
 export type ActionResult = { ok: true } | { ok: false; code: ActionError; message: string };
 
@@ -82,10 +85,19 @@ function uniqueName(base: string, taken: Set<string>): string {
 }
 
 export class RoomMachine {
-  constructor(public state: RoomState) {}
+  /**
+   * `isValidWord`: từ (đã chuẩn hoá) có hợp lệ không, tức mọi âm tiết đúng cấu trúc tiếng Việt hoặc có trong từ điển
+   * (src/lib/versus/syllable.ts). Chặn nhập chuỗi vô nghĩa như `aê yiư` để loại trừ chữ cái; không đòi từ phải có nghĩa.
+   * Riêng đáp án luôn được chấp nhận.
+   */
+  constructor(public state: RoomState, private readonly isValidWord: (word: string) => boolean) {
+    // Trạng thái do bản cũ lưu (trước khi có giải nghĩa) chưa có trường này.
+    if (state.match) state.match.definitions ??= [];
+    if (state.lastResult) state.lastResult.definitions ??= [];
+  }
 
-  static create(roomId: number): RoomMachine {
-    return new RoomMachine({ roomId, phase: 'idle', players: [], countdownEndsAt: null, lockedUntil: null, match: null, lastResult: null, reviewWord: null });
+  static create(roomId: number, isValidWord: (word: string) => boolean): RoomMachine {
+    return new RoomMachine({ roomId, phase: 'idle', players: [], countdownEndsAt: null, lockedUntil: null, match: null, lastResult: null, reviewWord: null }, isValidWord);
   }
 
   // ---------- truy vấn ----------
@@ -265,8 +277,8 @@ export class RoomMachine {
 
   // ---------- ván đấu ----------
 
-  /** Bắt đầu ván với từ khóa `answer` (sau tick() báo needAnswer). Trả về false (và hủy) nếu không bắt đầu được. */
-  beginMatch(answer: string, now: number): boolean {
+  /** Bắt đầu ván với từ khóa `answer` và giải nghĩa của nó (sau tick() báo needAnswer). Trả về false (và hủy) nếu không bắt đầu được. */
+  beginMatch(answer: string, definitions: Definition[], now: number): boolean {
     const s = this.state;
     if (s.phase !== 'starting') return false;
     const info = wordInfo(answer);
@@ -279,6 +291,7 @@ export class RoomMachine {
     s.reviewWord = null;
     s.match = {
       answer: info.word,
+      definitions,
       structure: info.structure,
       startedAt: now,
       endsAt: now + VERSUS.matchMaxMs,
@@ -304,6 +317,8 @@ export class RoomMachine {
     if (mp.status !== 'playing') return fail('already_done', 'Bạn đã hết lượt đoán');
     const result = evaluateGuess(raw, match.answer);
     if (!result.ok) return fail(result.code, result.message);
+    // Phải là từ hợp lệ (trừ đáp án): chặn nhập chuỗi vô nghĩa chỉ để loại trừ chữ cái. Lượt bị từ chối không mất lượt.
+    if (result.word !== match.answer && !this.isValidWord(result.word)) return fail('invalid_word', 'Từ này không hợp lệ');
     mp.guesses.push({ word: result.word, cells: result.cells, statuses: result.statuses });
     if (result.correct) {
       mp.status = 'won';
@@ -327,7 +342,7 @@ export class RoomMachine {
     const match = s.match;
     if (!match || match.finished) return;
     match.finished = { winnerId: winner?.id ?? null, winnerName: winner?.name ?? null, endedAt: now, reason };
-    s.lastResult = { word: match.answer, winnerName: match.finished.winnerName, endedAt: now };
+    s.lastResult = { word: match.answer, winnerName: match.finished.winnerName, endedAt: now, definitions: match.definitions };
     s.phase = 'locked';
     s.lockedUntil = now + VERSUS.resultLockMs;
     s.countdownEndsAt = null;
@@ -360,7 +375,7 @@ export class RoomMachine {
         yourStatus: mp.status,
         players: match.players.map((p) => ({ name: p.name, turns: p.guesses.length, status: p.status, isYou: p.id === id })),
         result: match.finished
-          ? { word: match.answer, winnerName: match.finished.winnerName, youWon: match.finished.winnerId === id, reason: match.finished.reason }
+          ? { word: match.answer, definitions: match.definitions, winnerName: match.finished.winnerName, youWon: match.finished.winnerId === id, reason: match.finished.reason }
           : null,
       };
     }

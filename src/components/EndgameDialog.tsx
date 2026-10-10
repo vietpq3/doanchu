@@ -5,6 +5,7 @@ import { copyToClipboard } from '@/lib/client/clipboard';
 import { buildShareLink } from '@/lib/game/keywords';
 import type { PublicGame } from '@/lib/game/types';
 import Cell from './Cell';
+import DefinitionList, { DEFINITION_SOURCE } from './DefinitionList';
 import Modal from './Modal';
 
 interface Props {
@@ -45,19 +46,7 @@ export default function EndgameDialog({ open, game, onReplay, onClose }: Props) 
         </div>
 
         <p className="answer-label">Giải nghĩa</p>
-        {definitions.length ? (
-          <ol className="defs">
-            {definitions.map((d, i) => (
-              <li key={i}>
-                {d.pos && <span className="pos">{d.pos}</span>}
-                {d.text}
-                {d.example && <span className="ex">Ví dụ: {formatExample(d.example)}</span>}
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="muted">Chưa có giải nghĩa cho từ này trong từ điển.</p>
-        )}
+        <DefinitionList definitions={definitions} />
 
         {keywordNo !== null && <ShareLink keywordNo={keywordNo} />}
 
@@ -65,7 +54,7 @@ export default function EndgameDialog({ open, game, onReplay, onClose }: Props) 
           <button ref={replayRef} className="btn" type="button" onClick={onReplay}>Chơi lại</button>
           <button className="link-btn" type="button" onClick={onClose}>Xem lại ô chữ</button>
         </div>
-        <p className="source-note">Nguồn giải nghĩa: Từ điển tiếng Việt (TVTD) qua minhqnd/dictionary · CC BY-SA 4.0</p>
+        <p className="source-note">{DEFINITION_SOURCE}</p>
       </section>
     </Modal>
   );
@@ -117,9 +106,4 @@ function ShareLink({ keywordNo }: { keywordNo: number }) {
       )}
     </div>
   );
-}
-
-/** Ví dụ trong từ điển ngăn cách bằng "~"; chỉ lấy 2 ví dụ đầu. */
-function formatExample(e: string) {
-  return e.split(/\s*~\s*/).filter(Boolean).slice(0, 2).join(' · ');
 }

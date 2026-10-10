@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import type { GameView } from '@/lib/versus/protocol';
+import DefinitionList from '../DefinitionList';
 import Modal from '../Modal';
 import { useSecondsLeft } from './RoomProvider';
 
@@ -15,8 +16,9 @@ interface Props {
 }
 
 /**
- * Popup kết quả khi ván kết thúc, có button `OK (10s)` đếm ngược 10 giây (theo giờ server). Hết giờ hoặc bấm OK thì
- * onOk(); đóng popup bằng Esc cũng tính là OK.
+ * Popup kết quả khi ván kết thúc, có button `OK (10s)` đếm ngược 10 giây (theo giờ server) và giải nghĩa từ khóa. Hết giờ hoặc
+ * bấm OK thì onOk(); đóng popup bằng Esc cũng tính là OK. Nút OK đặt ngay dưới câu kết quả (trước phần giải nghĩa dài) để luôn
+ * thấy được mà không phải cuộn; giải nghĩa vẫn còn ở khối "Lượt trước" của Inside Room sau khi popup đóng.
  */
 export default function ResultDialog({ game, lockedUntil, serverNow, onOk }: Props) {
   const okRef = useRef<HTMLButtonElement>(null);
@@ -41,6 +43,8 @@ export default function ResultDialog({ game, lockedUntil, serverNow, onOk }: Pro
         <button ref={okRef} className="btn" type="button" onClick={onOk}>
           OK ({secondsLeft ?? 0}s)
         </button>
+        <p className="answer-label">Giải nghĩa</p>
+        <DefinitionList definitions={result.definitions} showSource />
       </section>
     </Modal>
   );

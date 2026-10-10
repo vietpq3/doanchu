@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { VERSUS } from '@/lib/versus/config';
 import type { RoomView } from '@/lib/versus/protocol';
-import { useRoom, useSecondsLeft } from './RoomProvider';
+import DefinitionList from '../DefinitionList';
+import { useRoom, useRoomError, useSecondsLeft } from './RoomProvider';
 import VersusHeader from './VersusHeader';
 
 /** Chữ trên nút Start theo pha của phòng. */
@@ -30,7 +31,7 @@ function reviewWordFromUrl(): string | undefined {
 /** Inside Room (/rooms/[id]): Sảnh chờ + Bàn chơi + nút Start. Khi mình được đưa vào ván thì chuyển sang màn Versus. */
 export default function InsideRoomScreen() {
   const router = useRouter();
-  const { roomId, view, status, fatal, lastError, send, leave } = useRoom();
+  const { roomId, view, status, fatal, send, leave } = useRoom();
   const secondsLeft = useSecondsLeft(view?.countdownEndsAt ?? null, view?.serverNow ?? 0);
 
   // Ván bắt đầu và mình ở trong ván: sang màn Versus.
@@ -40,13 +41,7 @@ export default function InsideRoomScreen() {
   }, [inMatch, roomId, router]);
 
   // Thông báo lỗi thao tác (vd: "Ô này đã có người") tự ẩn sau ít giây.
-  const [hiddenSeq, setHiddenSeq] = useState(0);
-  useEffect(() => {
-    if (!lastError) return;
-    const timer = setTimeout(() => setHiddenSeq(lastError.seq), 2500);
-    return () => clearTimeout(timer);
-  }, [lastError]);
-  const toast = lastError && lastError.seq !== hiddenSeq ? lastError.message : '';
+  const toast = useRoomError(2500).visible?.message ?? '';
 
   if (status === 'rejected' || status === 'replaced') {
     return (
@@ -104,51 +99,36 @@ export default function InsideRoomScreen() {
           <h2 className="section-title">
             Bàn chơi {tableLocked && <span className="lock-badge">đã khóa</span>}
           </h2>
-          <div className="table-layout">
-            <ol className="seats">
-              {view.seats.map((name, seat) => {
-                const mine = view.youSeat === seat;
-                if (name === null) {
-                  return (
-                    <li key={seat}>
-                      <button className="seat empty" type="button" disabled={!canSit} onClick={() => send({ type: 'sit', seat })} aria-label={`Ngồi vào ô ${seat + 1}`}>
-                        <span className="seat-no">{seat + 1}</span>
-                        <span className="seat-hint">Trống</span>
-                      </button>
-                    </li>
-                  );
-                }
+          <ol className="seats">
+            {view.seats.map((name, seat) => {
+              const mine = view.youSeat === seat;
+              if (name === null) {
                 return (
                   <li key={seat}>
-                    <button
-                      className={'seat taken' + (mine ? ' you' : '')}
-                      type="button"
-                      disabled={!(mine && canStand)}
-                      onClick={() => send({ type: 'stand' })}
-                      aria-label={mine ? `${name} (bạn): bấm để đứng dậy` : name}
-                      title={mine && canStand ? 'Bấm để đứng dậy về sảnh' : undefined}
-                    >
+                    <button className="seat empty" type="button" disabled={!canSit} onClick={() => send({ type: 'sit', seat })} aria-label={`Ngồi vào ô ${seat + 1}`}>
                       <span className="seat-no">{seat + 1}</span>
-                      <span className="seat-name">{name}</span>
+                      <span className="seat-hint">Trống</span>
                     </button>
                   </li>
                 );
-              })}
-            </ol>
-
-            <aside className="last-result" aria-label="Kết quả lượt trước">
-              <h3>Lượt trước</h3>
-              {last ? (
-                <p>
-                  Từ khóa: <b>{last.word}</b>
-                  <br />
-                  {last.winnerName ? <>Người chiến thắng: <b>{last.winnerName}</b></> : 'Không ai tìm ra từ khóa'}
-                </p>
-              ) : (
-                <p className="muted">Chưa có lượt nào.</p>
-              )}
-            </aside>
-          </div>
+              }
+              return (
+                <li key={seat}>
+                  <button
+                    className={'seat taken' + (mine ? ' you' : '')}
+                    type="button"
+                    disabled={!(mine && canStand)}
+                    onClick={() => send({ type: 'stand' })}
+                    aria-label={mine ? `${name} (bạn): bấm để đứng dậy` : name}
+                    title={mine && canStand ? 'Bấm để đứng dậy về sảnh' : undefined}
+                  >
+                    <span className="seat-no">{seat + 1}</span>
+                    <span className="seat-name">{name}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
         </section>
 
         <button className="btn start-btn" type="button" disabled={!view.canStart} onClick={() => send({ type: 'start', word: reviewWordFromUrl() })}>
@@ -159,6 +139,23 @@ export default function InsideRoomScreen() {
             ? 'Bấm vào một ô trống ở Bàn chơi để tham gia đấu. Cần từ 2 người trở lên để Start.'
             : 'Bấm tên của bạn để đứng dậy. Ai ở Bàn chơi cũng bấm được Start khi có từ 2 người.'}
         </p>
+
+        {/* Nằm dưới nút Start (không chen giữa bàn và nút) để Start luôn ở ngay dưới Bàn chơi, không bị đẩy xuống khi giải nghĩa dài. */}
+        <section className="last-result" aria-label="Kết quả lượt trước">
+          <h3>Lượt trước</h3>
+          {last ? (
+            <>
+              <p>
+                Từ khóa: <b>{last.word}</b>
+                <br />
+                {last.winnerName ? <>Người chiến thắng: <b>{last.winnerName}</b></> : 'Không ai tìm ra từ khóa'}
+              </p>
+              <DefinitionList definitions={last.definitions} showSource />
+            </>
+          ) : (
+            <p className="muted">Chưa có lượt nào.</p>
+          )}
+        </section>
       </main>
     </>
   );

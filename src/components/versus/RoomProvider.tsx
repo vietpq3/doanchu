@@ -152,3 +152,22 @@ export function useSecondsLeft(endsAt: number | null, serverNow: number): number
   }, [endsAt, clockOffset]);
   return endsAt === null ? null : Math.max(0, Math.ceil((endsAt - now) / 1000));
 }
+
+/**
+ * Lỗi của thao tác gần nhất để hiện thành thông báo ngắn. Lỗi nằm trong provider dùng chung cho cả hai trang của phòng nên mỗi màn
+ * chỉ hiện lỗi xảy ra SAU khi màn đó được mở (không hiện lại lỗi của trang trước). `visible` tự ẩn sau `hideAfterMs`;
+ * `latest` giữ nguyên (dùng để rung hàng đang gõ, nhận biết lỗi mới qua `seq`).
+ */
+export function useRoomError(hideAfterMs: number): { visible: RoomError | null; latest: RoomError | null } {
+  const { lastError } = useRoom();
+  const [baseline] = useState(() => lastError?.seq ?? 0);
+  const [hiddenSeq, setHiddenSeq] = useState(0);
+  const latest = lastError && lastError.seq > baseline ? lastError : null;
+  useEffect(() => {
+    if (!latest) return;
+    const timer = setTimeout(() => setHiddenSeq(latest.seq), hideAfterMs);
+    return () => clearTimeout(timer);
+  }, [latest, hideAfterMs]);
+  return { visible: latest && latest.seq !== hiddenSeq ? latest : null, latest };
+}
+

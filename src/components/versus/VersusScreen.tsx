@@ -4,14 +4,15 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { textCells } from '@/lib/game/input';
 import { letterStatuses } from '@/lib/game/scoring';
+import { VERSUS } from '@/lib/versus/config';
 import type { MatchPlayerStatus } from '@/lib/versus/protocol';
 import Board from '../Board';
 import LetterStrip from '../LetterStrip';
 import ResultDialog from './ResultDialog';
-import { useRoom } from './RoomProvider';
+import { useRoom, useRoomError } from './RoomProvider';
 import VersusHeader from './VersusHeader';
 
-const GUESS_ERRORS = new Set(['bad_request', 'invalid_chars', 'incomplete', 'wrong_structure']);
+const GUESS_ERRORS = new Set(['bad_request', 'invalid_chars', 'incomplete', 'wrong_structure', 'invalid_word']);
 
 const STATUS_TEXT: Record<MatchPlayerStatus, string> = { playing: '', won: ' · đã đoán đúng', out: ' · hết lượt', left: ' · đã rời' };
 
@@ -21,7 +22,7 @@ const STATUS_TEXT: Record<MatchPlayerStatus, string> = { playing: '', won: ' · 
  */
 export default function VersusScreen() {
   const router = useRouter();
-  const { roomId, view, status, lastError, send, leave } = useRoom();
+  const { roomId, view, status, send, leave } = useRoom();
   const game = view?.game ?? null;
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -49,14 +50,9 @@ export default function VersusScreen() {
   }, [playing, rowCount]);
 
   // Lỗi của lượt đoán (thiếu chữ, sai cấu trúc...): rung hàng đang gõ và báo ngắn gọn.
-  const [hiddenSeq, setHiddenSeq] = useState(0);
-  useEffect(() => {
-    if (!lastError) return;
-    const timer = setTimeout(() => setHiddenSeq(lastError.seq), 1800);
-    return () => clearTimeout(timer);
-  }, [lastError]);
-  const guessError = lastError && GUESS_ERRORS.has(lastError.code) ? lastError : null;
-  const toast = lastError && lastError.seq !== hiddenSeq ? lastError.message : '';
+  const { visible, latest } = useRoomError(1800);
+  const guessError = latest && GUESS_ERRORS.has(latest.code) ? latest : null;
+  const toast = visible?.message ?? '';
 
   const current = useMemo(() => (game && playing ? textCells(text, game.structure) : null), [game, playing, text]);
   const letters = useMemo(() => letterStatuses(game?.yourRows ?? []), [game]);
@@ -144,7 +140,7 @@ export default function VersusScreen() {
               <button className="btn" type="submit">Đoán</button>
             </form>
             <p className={'input-hint' + (current?.overflow ? ' warn' : '')}>
-              {current?.overflow ? 'Nhiều chữ hơn ô chữ' : 'Gõ bằng bộ gõ tiếng Việt của máy; các âm tiết cách nhau bằng dấu cách.'}
+              {current?.overflow ? 'Nhiều chữ hơn ô chữ' : 'Gõ bằng bộ gõ tiếng Việt của máy; các âm tiết cách nhau bằng dấu cách.' + (VERSUS.validateGuessWords ? ' Từ đoán phải là từ hợp lệ.' : '')}
             </p>
             <LetterStrip statuses={letters} />
           </div>

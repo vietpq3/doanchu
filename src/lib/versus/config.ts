@@ -21,6 +21,13 @@ export const VERSUS = {
   reconnectGraceMs: 30_000,
   /** Số lượt đoán mỗi người (bằng config.maxTurns của Chơi đơn) */
   maxTurns: 6,
+  /** Số nghĩa tối đa hiện ở màn hình kết thúc (bằng config.maxDefinitions của Chơi đơn) */
+  maxDefinitions: 4,
+  /**
+   * Từ đoán phải hợp lệ (mọi âm tiết đúng cấu trúc tiếng Việt hoặc có trong từ điển; src/lib/versus/syllable.ts) mới được chấm,
+   * để chặn nhập chuỗi vô nghĩa như `aê yiư` chỉ nhằm loại trừ chữ cái. Không đòi từ phải có nghĩa. Đổi thành false để tắt.
+   */
+  validateGuessWords: true,
   /** Độ dài tên người chơi */
   nameMax: 20,
 } as const;

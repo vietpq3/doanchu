@@ -4,6 +4,7 @@
  * người khác trước khi ván kết thúc (có test kiểm tra).
  */
 import type { ScoredRow } from '../game/scoring';
+import type { Definition } from '../game/types';
 import { VERSUS } from './config';
 
 export type Phase = 'idle' | 'countdown' | 'starting' | 'playing' | 'locked';
@@ -17,6 +18,8 @@ export interface LastResult {
   /** null = không ai tìm ra */
   winnerName: string | null;
   endedAt: number;
+  /** giải nghĩa từ khóa (rỗng nếu từ điển chưa có) */
+  definitions: Definition[];
 }
 
 export interface GameView {
@@ -30,7 +33,7 @@ export interface GameView {
   /** mọi người trong ván: chỉ tên + số lượt đã đoán, không có chữ/màu */
   players: { name: string; turns: number; status: MatchPlayerStatus; isYou: boolean }[];
   /** có khi ván đã kết thúc */
-  result: { word: string; winnerName: string | null; youWon: boolean; reason: EndReason } | null;
+  result: { word: string; definitions: Definition[]; winnerName: string | null; youWon: boolean; reason: EndReason } | null;
 }
 
 /** Trạng thái phòng mà một người chơi cụ thể được phép thấy. */
