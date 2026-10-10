@@ -3,8 +3,9 @@
 import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getPlayerId, getSavedName } from '@/lib/client/player';
-import type { ClientMessage, RoomView, ServerMessage } from '@/lib/versus/protocol';
-import { sanitizeName } from '@/lib/versus/protocol';
+import { VERSUS } from '@/lib/versus/config';
+import type { ChatMessage, ClientMessage, RoomView, ServerMessage } from '@/lib/versus/protocol';
+import { isChatError, sanitizeName } from '@/lib/versus/protocol';
 
 export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting' | 'rejected' | 'replaced';
 
@@ -25,9 +26,16 @@ interface RoomContextValue {
   lastError: RoomError | null;
   /** giờ server trừ giờ trình duyệt (ms), để đếm ngược theo giờ server */
   clockOffset: number;
-  send: (msg: ClientMessage) => void;
+  /** gửi lệnh cho server; false nếu đang mất kết nối (lệnh không được gửi) */
+  send: (msg: ClientMessage) => boolean;
   /** Rời phòng: báo server rồi về danh sách room */
   leave: () => void;
+  /** các tin chat gần nhất của phòng (cũ trước, mới sau) */
+  chat: ChatMessage[];
+  /** lỗi của lần gửi chat gần nhất (vd gửi quá nhanh): hiện trong khung chat, không hiện ở màn chơi */
+  chatError: RoomError | null;
+  /** Đăng ký nhận từng tin chat mới đến (không gồm lịch sử gửi lúc vào phòng); trả về hàm hủy đăng ký. */
+  onChatMessage: (listener: (message: ChatMessage) => void) => () => void;
 }
 
 const RoomContext = createContext<RoomContextValue | null>(null);
@@ -53,9 +61,12 @@ export function RoomProvider({ roomId, children }: { roomId: number; children: R
   const [fatal, setFatal] = useState<string | null>(null);
   const [lastError, setLastError] = useState<RoomError | null>(null);
   const [clockOffset, setClockOffset] = useState(0);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
+  const [chatError, setChatError] = useState<RoomError | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const errorSeq = useRef(0);
   const leftRef = useRef(false);
+  const chatListeners = useRef(new Set<(message: ChatMessage) => void>());
 
   useEffect(() => {
     const name = sanitizeName(getSavedName());
@@ -86,9 +97,16 @@ export function RoomProvider({ roomId, children }: { roomId: number; children: R
         if (msg.type === 'state') {
           setView(msg.view);
           setClockOffset(msg.view.serverNow - Date.now());
+        } else if (msg.type === 'chat_history') {
+          setChat(msg.messages); // vào/nối lại phòng: thay toàn bộ (không trùng tin đã có)
+        } else if (msg.type === 'chat') {
+          setChat((prev) => [...prev, msg.message].slice(-VERSUS.chatHistory));
+          for (const listener of chatListeners.current) listener(msg.message);
         } else if (msg.type === 'replaced') {
           terminal = true;
           setStatus('replaced');
+        } else if (isChatError(msg.code)) {
+          setChatError({ seq: ++errorSeq.current, code: msg.code, message: msg.message });
         } else if (FATAL_CODES.has(msg.code)) {
           terminal = true;
           setFatal(msg.message);
@@ -116,7 +134,17 @@ export function RoomProvider({ roomId, children }: { roomId: number; children: R
 
   const send = useCallback((msg: ClientMessage) => {
     const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify(msg));
+    return true;
+  }, []);
+
+  const onChatMessage = useCallback((listener: (message: ChatMessage) => void) => {
+    const listeners = chatListeners.current;
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
   }, []);
 
   const leave = useCallback(() => {
@@ -127,8 +155,8 @@ export function RoomProvider({ roomId, children }: { roomId: number; children: R
   }, [send, router]);
 
   const value = useMemo(
-    () => ({ roomId, view, status, fatal, lastError, clockOffset, send, leave }),
-    [roomId, view, status, fatal, lastError, clockOffset, send, leave],
+    () => ({ roomId, view, status, fatal, lastError, clockOffset, send, leave, chat, chatError, onChatMessage }),
+    [roomId, view, status, fatal, lastError, clockOffset, send, leave, chat, chatError, onChatMessage],
   );
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>;
 }

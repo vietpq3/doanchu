@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { VERSUS } from '@/lib/versus/config';
-import { RoomMachine } from '@/lib/versus/room';
+import { chatMessageFor, RoomMachine } from '@/lib/versus/room';
 
 const T0 = 1_000_000;
 const ANSWER = 'vũ trụ'; // cấu trúc [2, 3]
@@ -623,5 +623,113 @@ describe('không lộ thông tin trước khi ván kết thúc', () => {
     startMatch(m);
     expect(JSON.stringify(m.state)).toContain(ANSWER);
     expect(JSON.stringify(view(m, 'a'))).not.toContain(ANSWER);
+  });
+});
+
+describe('chat của phòng', () => {
+  const texts = (m: RoomMachine, id: string) => m.chatHistoryFor(id).map((c) => c.text);
+
+  test('ai trong phòng cũng chat được (sảnh, bàn, đang đấu); tên người gửi lấy từ server, tin được chuẩn hoá', () => {
+    const m = twoAtTable();
+    join(m, 'c', 'Chi');
+    const sent = m.chat('c', '  Chào   cả nhà ', T0);
+    expect(sent).toMatchObject({ ok: true, entry: { seq: 1, from: 'c', name: 'Chi', text: 'Chào cả nhà', at: T0 } });
+    const t = startMatch(m);
+    expect(m.chat('a', 'Bắt đầu nào', t + 1000).ok).toBe(true); // đang đấu
+    expect(m.chat('c', 'Cố lên', t + 2000).ok).toBe(true); // người xem ở sảnh
+    expect(texts(m, 'b')).toEqual(['Chào cả nhà', 'Bắt đầu nào', 'Cố lên']);
+    expect(m.chatHistoryFor('b').map((c) => c.seq)).toEqual([1, 2, 3]);
+  });
+
+  test('người nhận biết tin nào là của mình; tin gửi xuống không có id người gửi', () => {
+    const m = twoAtTable();
+    m.chat('a', 'xin chào', T0);
+    expect(m.chatHistoryFor('a')).toEqual([{ seq: 1, name: 'An', text: 'xin chào', at: T0, mine: true }]);
+    expect(m.chatHistoryFor('b')).toEqual([{ seq: 1, name: 'An', text: 'xin chào', at: T0, mine: false }]);
+    expect(chatMessageFor(m.state.chat[0], 'b')).toEqual(m.chatHistoryFor('b')[0]);
+    expect(JSON.stringify(m.chatHistoryFor('b'))).not.toContain('"a"');
+  });
+
+  test('người không ở trong phòng thì không chat được và không có lịch sử; tin trống bị từ chối', () => {
+    const m = twoAtTable();
+    expect(code(m.chat('x', 'hello', T0))).toBe('unknown_player');
+    expect(code(m.chat('a', '   ', T0))).toBe('chat_empty');
+    expect(code(m.chat('a', 42, T0))).toBe('chat_empty');
+    expect(m.chatHistoryFor('x')).toEqual([]);
+    expect(m.state.chat).toEqual([]);
+  });
+
+  test(`chỉ giữ ${VERSUS.chatHistory} tin gần nhất; số thứ tự không bao giờ dùng lại`, () => {
+    const m = twoAtTable();
+    const total = VERSUS.chatHistory + 7;
+    for (let i = 1; i <= total; i++) expect(m.chat(i % 2 ? 'a' : 'b', `tin ${i}`, T0 + i * 10_000).ok).toBe(true);
+    const history = m.chatHistoryFor('a');
+    expect(history).toHaveLength(VERSUS.chatHistory);
+    expect(history[0].text).toBe(`tin ${total - VERSUS.chatHistory + 1}`);
+    expect(history.at(-1)).toMatchObject({ seq: total, text: `tin ${total}` });
+  });
+
+  test(`giới hạn tần suất: tối đa ${VERSUS.chatRate.messages} tin trong ${VERSUS.chatRate.windowMs / 1000} giây mỗi người`, () => {
+    const m = twoAtTable();
+    const { messages, windowMs } = VERSUS.chatRate;
+    for (let i = 0; i < messages; i++) expect(m.chat('a', `tin ${i}`, T0 + i).ok).toBe(true);
+    expect(code(m.chat('a', 'quá nhanh', T0 + messages))).toBe('chat_rate_limited');
+    expect(m.chat('b', 'người khác vẫn gửi được', T0 + messages).ok).toBe(true);
+    expect(m.chat('a', 'đợi đủ lâu thì gửi tiếp được', T0 + windowMs).ok).toBe(true);
+    expect(texts(m, 'a')).not.toContain('quá nhanh');
+  });
+
+  test('chat còn nguyên qua ván đấu và khi phòng mở lại; người mới vào thấy lịch sử', () => {
+    const m = twoAtTable();
+    m.chat('a', 'trước ván', T0);
+    const t = startMatch(m);
+    m.chat('b', 'trong ván', t + 1000);
+    m.guess('a', ANSWER, t + 2000);
+    m.tick(t + 2000 + VERSUS.resultLockMs);
+    expect(view(m, 'a', t + 2000 + VERSUS.resultLockMs).phase).toBe('idle');
+    join(m, 'c', 'Chi', t + 20_000);
+    expect(texts(m, 'c')).toEqual(['trước ván', 'trong ván']);
+  });
+
+  test('phòng không còn ai thì xóa chat (kể cả khi người cuối cùng hết hạn chờ nối lại); số thứ tự vẫn tăng tiếp', () => {
+    const m = twoAtTable();
+    m.chat('a', 'xin chào', T0);
+    m.leave('a', T0 + 1);
+    expect(m.state.chat).toHaveLength(1); // còn Bình
+    m.leave('b', T0 + 2);
+    expect(m.state.chat).toEqual([]);
+    join(m, 'c', 'Chi', T0 + 3);
+    expect(m.chatHistoryFor('c')).toEqual([]);
+    expect(m.chat('c', 'có ai không', T0 + 4)).toMatchObject({ ok: true, entry: { seq: 2 } });
+
+    const m2 = twoAtTable();
+    const t = startMatch(m2);
+    m2.chat('a', 'trong ván', t + 1);
+    m2.disconnect('a', t + 2);
+    m2.disconnect('b', t + 3);
+    expect(m2.state.chat).toHaveLength(1); // đang chờ nối lại: vẫn giữ
+    m2.tick(t + 3 + VERSUS.reconnectGraceMs);
+    expect(m2.isEmpty).toBe(true);
+    expect(m2.state.chat).toEqual([]);
+  });
+
+  test('trạng thái do bản cũ lưu (chưa có chat) vẫn đọc được và chat được', () => {
+    const m = twoAtTable();
+    const old = JSON.parse(JSON.stringify(m.state));
+    delete old.chat;
+    delete old.chatSeq;
+    const restored = new RoomMachine(old, (w) => DICT.has(w));
+    expect(restored.chatHistoryFor('a')).toEqual([]);
+    expect(restored.chat('a', 'xin chào', T0)).toMatchObject({ ok: true, entry: { seq: 1 } });
+  });
+
+  test('chat không làm đổi trạng thái phòng (không hủy đếm ngược, không đổi mốc đánh thức)', () => {
+    const m = twoAtTable();
+    m.start('a', T0);
+    const before = JSON.stringify(view(m, 'a', T0 + 1000));
+    const wake = m.nextWakeAt();
+    m.chat('b', 'đợi tôi với', T0 + 1000);
+    expect(JSON.stringify(view(m, 'a', T0 + 1000))).toBe(before);
+    expect(m.nextWakeAt()).toBe(wake);
   });
 });

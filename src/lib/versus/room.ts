@@ -11,8 +11,8 @@ import type { Status } from '../game/scoring';
 import type { Definition } from '../game/types';
 import { wordInfo } from '../game/vietnamese';
 import { roomName, VERSUS } from './config';
-import { sanitizeName } from './protocol';
-import type { EndReason, GameView, LastResult, MatchPlayerStatus, Phase, RoomView } from './protocol';
+import { sanitizeChat, sanitizeName } from './protocol';
+import type { ChatMessage, EndReason, GameView, LastResult, MatchPlayerStatus, Phase, RoomView } from './protocol';
 
 export interface RoomPlayer {
   id: string;
@@ -43,6 +43,15 @@ export interface Match {
   finished: { winnerId: string | null; winnerName: string | null; endedAt: number; reason: EndReason } | null;
 }
 
+/** Một tin chat lưu ở server: có id người gửi (để tính `mine` cho từng người nhận), id này không bao giờ được gửi xuống client. */
+export interface ChatEntry {
+  seq: number;
+  from: string;
+  name: string;
+  text: string;
+  at: number;
+}
+
 /** Toàn bộ trạng thái của phòng, serialize được sang JSON để lưu trong Durable Object. */
 export interface RoomState {
   roomId: number;
@@ -54,12 +63,17 @@ export interface RoomState {
   lastResult: LastResult | null;
   /** chỉ dùng khi server bật REVIEW_MODE: từ khóa chọn sẵn cho ván sắp bắt đầu */
   reviewWord: string | null;
+  /** chat của phòng: VERSUS.chatHistory tin gần nhất; xóa khi phòng không còn ai */
+  chat: ChatEntry[];
+  /** số thứ tự của tin chat gần nhất (chỉ tăng) */
+  chatSeq: number;
 }
 
 export type ActionError =
   | 'bad_name' | 'room_full' | 'unknown_player' | 'table_locked' | 'already_seated' | 'bad_seat' | 'seat_taken'
   | 'not_seated' | 'not_enough_players' | 'already_counting' | 'room_busy' | 'no_game' | 'not_in_match' | 'already_done'
-  | 'bad_request' | 'invalid_chars' | 'incomplete' | 'wrong_structure' | 'invalid_word';
+  | 'bad_request' | 'invalid_chars' | 'incomplete' | 'wrong_structure' | 'invalid_word'
+  | 'chat_empty' | 'chat_rate_limited';
 
 export type ActionResult = { ok: true } | { ok: false; code: ActionError; message: string };
 
@@ -84,20 +98,33 @@ function uniqueName(base: string, taken: Set<string>): string {
   }
 }
 
+/** Tin chat như người `viewerId` thấy (bỏ id người gửi). */
+export const chatMessageFor = (entry: ChatEntry, viewerId: string): ChatMessage => ({
+  seq: entry.seq, name: entry.name, text: entry.text, at: entry.at, mine: entry.from === viewerId,
+});
+
 export class RoomMachine {
+  /** thời điểm các tin chat gần đây của từng người (giới hạn tần suất); chỉ ở bộ nhớ, mất khi Durable Object ngủ cũng không sao */
+  private chatTimes = new Map<string, number[]>();
+
   /**
    * `isValidWord`: từ (đã chuẩn hoá) có hợp lệ không, tức mọi âm tiết đúng cấu trúc tiếng Việt hoặc có trong từ điển
    * (src/lib/versus/syllable.ts). Chặn nhập chuỗi vô nghĩa như `aê yiư` để loại trừ chữ cái; không đòi từ phải có nghĩa.
    * Riêng đáp án luôn được chấp nhận.
    */
   constructor(public state: RoomState, private readonly isValidWord: (word: string) => boolean) {
-    // Trạng thái do bản cũ lưu (trước khi có giải nghĩa) chưa có trường này.
+    // Trạng thái do bản cũ lưu (trước khi có giải nghĩa, chat) chưa có các trường này.
     if (state.match) state.match.definitions ??= [];
     if (state.lastResult) state.lastResult.definitions ??= [];
+    state.chat ??= [];
+    state.chatSeq ??= 0;
   }
 
   static create(roomId: number, isValidWord: (word: string) => boolean): RoomMachine {
-    return new RoomMachine({ roomId, phase: 'idle', players: [], countdownEndsAt: null, lockedUntil: null, match: null, lastResult: null, reviewWord: null }, isValidWord);
+    return new RoomMachine(
+      { roomId, phase: 'idle', players: [], countdownEndsAt: null, lockedUntil: null, match: null, lastResult: null, reviewWord: null, chat: [], chatSeq: 0 },
+      isValidWord,
+    );
   }
 
   // ---------- truy vấn ----------
@@ -175,11 +202,45 @@ export class RoomMachine {
     const idx = this.state.players.findIndex((p) => p.id === id);
     if (idx < 0) return;
     const [p] = this.state.players.splice(idx, 1);
+    this.chatTimes.delete(id);
     const match = this.activeMatch;
     const mp = match?.players.find((x) => x.id === id);
     if (mp && mp.status === 'playing') mp.status = 'left';
     if (this.state.phase === 'countdown' && p.seat !== null) this.cancelCountdown();
     this.checkEnd(now);
+    this.clearChatIfEmpty();
+  }
+
+  /** Phòng không còn ai thì xóa chat: người vào sau không thấy cuộc trò chuyện cũ của những người đã đi. */
+  private clearChatIfEmpty(): void {
+    if (this.state.players.length === 0) this.state.chat = [];
+  }
+
+  // ---------- chat ----------
+
+  /**
+   * Một tin chat của người `id` (ai trong phòng cũng chat được: Sảnh chờ, Bàn chơi, đang đấu). Tên người gửi lấy từ server,
+   * không tin client. Chỉ giữ VERSUS.chatHistory tin gần nhất. Trả về tin vừa lưu để gửi cho cả phòng.
+   */
+  chat(id: string, raw: unknown, now: number): { ok: true; entry: ChatEntry } | { ok: false; code: ActionError; message: string } {
+    const p = this.find(id);
+    if (!p) return { ok: false, code: 'unknown_player', message: 'Bạn chưa ở trong phòng' };
+    const text = sanitizeChat(raw);
+    if (!text) return { ok: false, code: 'chat_empty', message: 'Tin nhắn trống' };
+    const { messages, windowMs } = VERSUS.chatRate;
+    const recent = (this.chatTimes.get(id) ?? []).filter((t) => now - t < windowMs);
+    if (recent.length >= messages) return { ok: false, code: 'chat_rate_limited', message: 'Bạn gửi tin nhắn quá nhanh, đợi chút nhé' };
+    recent.push(now);
+    this.chatTimes.set(id, recent);
+    const entry: ChatEntry = { seq: ++this.state.chatSeq, from: id, name: p.name, text, at: now };
+    this.state.chat.push(entry);
+    if (this.state.chat.length > VERSUS.chatHistory) this.state.chat.splice(0, this.state.chat.length - VERSUS.chatHistory);
+    return { ok: true, entry };
+  }
+
+  /** Lịch sử chat (các tin gần nhất) cho người `viewerId`; rỗng nếu người đó không ở trong phòng. */
+  chatHistoryFor(viewerId: string): ChatMessage[] {
+    return this.find(viewerId) ? this.state.chat.map((e) => chatMessageFor(e, viewerId)) : [];
   }
 
   // ---------- Bàn chơi ----------
@@ -350,6 +411,7 @@ export class RoomMachine {
     s.players = s.players.filter((p) => p.disconnectedAt === null); // đang chờ nối lại mà ván đã xong: coi như đã rời
     for (const p of s.players) p.seat = null;
     for (const mp of match.players) if (mp.status === 'playing' && !s.players.some((p) => p.id === mp.id)) mp.status = 'left';
+    this.clearChatIfEmpty();
   }
 
   // ---------- góc nhìn của từng người chơi ----------

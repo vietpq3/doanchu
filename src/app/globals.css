@@ -13,6 +13,7 @@
   --accent: #b5382a;
   --accent-text: #ffffff;
   --focus: #2f6bd8;
+  --switch-knob: #ffffff; /* ô đang chọn của nút giao diện sáng/tối */
 
   --c-correct: #3c8c55;   /* xanh lá */
   --c-present: #c28e14;   /* vàng */
@@ -31,7 +32,7 @@
   :root:not([data-theme="light"]) {
     --bg: #15171a; --surface: #1f2226; --surface-2: #272a2f; --text: #ebe8e1; --muted: #a4a9b0;
     --border: #353940; --cell-border: #41454c; --cell-filled: #7d828a; --key-bg: #5c616a; --key-bg-hover: #6a707a;
-    --accent: #e0584a; --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
+    --accent: #e0584a; --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25); --switch-knob: #41454c;
 
     /* Xám ở chế độ tối: ô "không có" tối và chữ mờ, chữ chưa đoán sáng hơn — giống Wordle, không lẫn nhau */
     --c-absent: #2b2e33; --on-absent: #9aa0a8; --absent-border: #464a52;
@@ -41,7 +42,7 @@
 :root[data-theme="dark"] {
   --bg: #15171a; --surface: #1f2226; --surface-2: #272a2f; --text: #ebe8e1; --muted: #a4a9b0;
   --border: #353940; --cell-border: #41454c; --cell-filled: #7d828a; --key-bg: #5c616a; --key-bg-hover: #6a707a;
-  --accent: #e0584a; --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
+  --accent: #e0584a; --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25); --switch-knob: #41454c;
   /* Xám ở chế độ tối: ô "không có" tối và chữ mờ, chữ chưa đoán sáng hơn — giống Wordle, không lẫn nhau */
   --c-absent: #2b2e33; --on-absent: #9aa0a8; --absent-border: #464a52;
   color-scheme: dark;
@@ -80,13 +81,40 @@ button { font: inherit; color: inherit; }
   font-weight: 700; font-size: .95rem; font-variant-numeric: tabular-nums; cursor: pointer;
 }
 .keyword-no:hover { background: var(--surface-2); }
-/* Điện thoại hẹp (320–360px): thanh trên có số từ khóa + hai nút, thu nhỏ một chút để tên game vẫn nằm trên một dòng */
-@media (max-width: 360px) {
-  .topbar .wrap { gap: 6px; }
-  .brand { font-size: 1.15rem; }
+/* Nút chọn giao diện sáng/tối: hai radio button (☀ / ☾) trông như một công tắc, ô đang chọn nổi lên */
+.theme-switch { flex: none; display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); }
+.theme-opt { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; color: var(--muted); transition: background-color .2s, color .2s, box-shadow .2s; }
+.theme-opt svg { width: 16px; height: 16px; }
+.theme-opt:hover { color: var(--text); }
+.theme-opt:has(input:checked) { background: var(--switch-knob); color: var(--accent); box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
+.theme-opt:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { .theme-opt { transition: none; } }
+/* Điện thoại: hai bên thanh trên chỉ rộng vừa các nút (tên trang ở giữa phần còn lại) và mọi thứ nhỏ lại một nấc, để đủ chỗ cho nút
+   giao diện mà tên trang vẫn nằm trọn trên một dòng (Chơi đơn có số từ khóa + 3 nút; Inside Room có "Rời phòng" + nút giao diện) */
+@media (max-width: 479.98px) {
+  .topbar .wrap { grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; }
+  .brand { font-size: 1.2rem; overflow: hidden; text-overflow: ellipsis; }
   .topbar .icon-btn { width: 36px; height: 36px; }
   .topbar-right { gap: 6px; }
+  .theme-opt { width: 26px; height: 26px; }
   .keyword-no { min-height: 36px; padding: 0 10px; font-size: .9rem; }
+  .topbar .leave-btn { padding: 6px 4px; }
+}
+/* Điện thoại hẹp (320–360px) */
+@media (max-width: 360px) {
+  .brand { font-size: 1.05rem; }
+  .topbar .icon-btn { width: 34px; height: 34px; }
+  .theme-opt { width: 24px; height: 24px; }
+  .theme-opt svg { width: 15px; height: 15px; }
+  .keyword-no { min-height: 34px; padding: 0 7px; font-size: .84rem; }
+}
+@media (max-width: 340px) {
+  .topbar .wrap, .topbar-right { gap: 4px; }
+  .brand { font-size: 1rem; }
+  .topbar .icon-btn { width: 32px; height: 32px; }
+  .theme-opt { width: 22px; height: 22px; }
+  .theme-opt svg { width: 14px; height: 14px; }
+  .keyword-no { min-height: 32px; padding: 0 5px; font-size: .78rem; }
 }
 
 /* ---------- Bố cục màn chơi ---------- */
@@ -329,3 +357,115 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8
 .review-text { margin: 0; font-weight: 700; }
 .review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .review-actions .btn { flex: 1 1 140px; min-height: 44px; }
+
+/* ---------- Chat của phòng (Sảnh chờ + màn đấu): laptop là cột bên phải, điện thoại là bubble ----------
+   Mốc 960px khớp với SIDE_QUERY trong RoomChat.tsx. */
+.room-layout { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.room-page { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.chat-panel { display: flex; flex-direction: column; background: var(--surface); }
+.chat-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 12px 8px 16px; border-bottom: 1px solid var(--border); }
+.chat-head h2 { margin: 0; font-size: 1.05rem; }
+.chat-room { flex: 1; color: var(--muted); font-size: .85rem; }
+.chat-log {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 12px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.chat-msg { align-self: flex-start; max-width: 85%; display: flex; flex-direction: column; align-items: flex-start; }
+.chat-msg.mine { align-self: flex-end; align-items: flex-end; }
+.chat-msg.head:not(:first-child) { margin-top: 8px; }
+.chat-meta { display: flex; gap: 6px; padding: 0 6px 1px; font-size: .75rem; color: var(--muted); }
+.chat-meta b { color: var(--text); overflow-wrap: anywhere; }
+.chat-text {
+  padding: 6px 12px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--border);
+  font-size: .92rem; line-height: 1.4; overflow-wrap: anywhere;
+}
+.chat-msg.mine .chat-text { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 35%, var(--surface)); }
+.chat-empty { margin: auto 0; padding: 0 12px; text-align: center; font-size: .88rem; color: var(--muted); }
+.chat-error { margin: 0; padding: 0 12px; font-size: .82rem; color: var(--accent); font-weight: 600; }
+.chat-form { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
+/* cỡ chữ 16px: Safari trên iPhone không tự phóng to trang khi chạm vào ô nhập */
+.chat-input {
+  flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 2px solid var(--cell-filled); border-radius: 10px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 1rem;
+}
+.chat-input::placeholder { color: var(--muted); }
+.chat-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.btn.chat-send { min-height: 44px; padding: 0 16px; border-radius: 10px; }
+.btn.chat-send:disabled { cursor: default; }
+
+/* Emoji voz trong chat: ảnh trong tin, nút + bảng chọn emoji, danh sách gợi ý khi gõ ":x" (bảng và danh sách nổi ngay trên ô nhập) */
+.chat-emoji { vertical-align: middle; margin: 0 1px; }
+.chat-msg .chat-text.emoji-only { background: none; border-color: transparent; padding: 2px 0; } /* thắng cả nền của tin của mình */
+.chat-compose { position: relative; }
+.chat-emoji-btn { width: 44px; height: 44px; border-color: transparent; color: var(--muted); }
+.chat-emoji-btn:hover, .chat-emoji-btn.active { color: var(--accent); }
+.chat-emoji-btn svg { width: 24px; height: 24px; }
+.emoji-picker, .emoji-suggest {
+  position: absolute; z-index: 2; left: 8px; right: 8px; bottom: calc(100% + 4px);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+}
+.emoji-picker { max-height: min(290px, 45dvh); overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 6px; }
+.emoji-picker-title { margin: 8px 6px 4px; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 2px; }
+.emoji-cell { height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.emoji-cell:hover, .emoji-cell:focus-visible { background: var(--surface-2); }
+.emoji-suggest ul { list-style: none; margin: 0; padding: 4px; }
+.emoji-option { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 2px 8px; border-radius: 8px; cursor: pointer; }
+.emoji-option.active { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.emoji-option-pic { flex: none; width: 36px; display: grid; place-items: center; }
+.emoji-option code { font-weight: 700; font-size: .9rem; }
+.emoji-option-alias { color: var(--muted); font-size: .8rem; }
+.emoji-suggest-hint { margin: 0; padding: 5px 12px 6px; border-top: 1px solid var(--border); font-size: .72rem; color: var(--muted); }
+@media (pointer: coarse) { .emoji-suggest-hint { display: none; } } /* gợi ý phím tắt chỉ cho máy có bàn phím */
+
+/* chấm đỏ "có tin mới": trên bubble (điện thoại) và trên nút mở lại sidebar đã thu gọn (laptop) */
+.chat-dot { position: absolute; top: 1px; right: 1px; width: 15px; height: 15px; border-radius: 50%; background: #e5322d; border: 2px solid var(--bg); }
+
+/* Laptop: chat là sidebar bên phải. Thu gọn = sidebar co lại còn dải hẹp (--chat-rail) và khung chat trượt sang phải, cùng thời gian
+   và cùng nhịp (--chat-slide) nên trông như cả khung trượt ra khỏi màn hình; cột trang bên trái nở ra theo từng khung hình. */
+@media (min-width: 960px) {
+  .room-layout.with-chat {
+    --chat-w: 340px; --chat-rail: 56px; --chat-slide: .36s cubic-bezier(.4, 0, .2, 1);
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start;
+  }
+  .room-layout.with-chat .room-page { min-height: 100dvh; }
+  .chat {
+    position: sticky; top: 0; height: 100dvh; width: var(--chat-w);
+    overflow: hidden; overflow: clip; /* clip: trình duyệt không tự cuộn ngang sidebar khi focus vào ô nhập */
+    border-left: 1px solid var(--border); background: var(--surface); transition: width var(--chat-slide);
+  }
+  .chat-panel { width: var(--chat-w); height: 100%; transition: transform var(--chat-slide); }
+  .chat-head { padding-left: 60px; } /* chừa chỗ cho nút thu gọn */
+  .chat-toggle { position: absolute; z-index: 3; top: 8px; left: 8px; background: var(--surface); }
+  .chat-toggle svg { transition: transform var(--chat-slide); }
+  .chat-toggle .chat-dot { top: -3px; right: -3px; border-color: var(--surface); }
+  .chat-rail-label {
+    position: absolute; top: 64px; left: calc(var(--chat-rail) / 2); transform: translateX(-50%); writing-mode: vertical-rl;
+    font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+    opacity: 0; pointer-events: none; transition: opacity .15s;
+  }
+  .chat.collapsed { width: var(--chat-rail); }
+  .chat.collapsed .chat-panel { transform: translateX(100%); }
+  .chat.collapsed .chat-toggle svg { transform: rotate(180deg); }
+  .chat.collapsed .chat-rail-label { opacity: 1; transition-delay: .2s; }
+}
+@media (min-width: 1280px) { .room-layout.with-chat { --chat-w: 380px; } }
+@media (prefers-reduced-motion: reduce) {
+  .chat, .chat-panel, .chat-toggle svg, .chat-rail-label { transition: none !important; }
+}
+
+@media (max-width: 959.98px) {
+  .room-layout.with-chat .game { padding-bottom: 88px; } /* cuộn hết trang thì không có gì nằm dưới bubble */
+  .chat-bubble {
+    position: fixed; z-index: 30; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
+    width: 56px; height: 56px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer;
+    background: var(--text); color: var(--bg); box-shadow: 0 4px 14px rgb(0 0 0 / .28);
+  }
+  .chat-bubble svg { width: 26px; height: 26px; }
+  .chat-backdrop { position: fixed; inset: 0; z-index: 29; } /* dưới bubble và khung chat (z-index 30) */
+  .chat-panel {
+    position: fixed; z-index: 30; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom));
+    width: min(400px, calc(100vw - 24px)); height: min(62dvh, 480px);
+    border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden;
+  }
+}
