@@ -39,6 +39,18 @@ export interface GameView {
   result: { word: string; definitions: Definition[]; winnerName: string | null; youWon: boolean; reason: EndReason } | null;
 }
 
+/** Một dòng của Leader Board ("Bảng xếp hạng": số ván thắng trong ngày của người đang ở trong phòng). Không có playerId. */
+export interface LeaderboardEntry {
+  name: string;
+  wins: number;
+  /** hạng 1, 2, 3... (không có hạng bằng nhau; xem standings() trong leaderboard.ts) */
+  rank: number;
+  isYou: boolean;
+}
+
+/** Hạng 1–3 trên Leader Board: thẻ tên có khung vàng / bạc / đồng. */
+export type Medal = 1 | 2 | 3;
+
 /** Trạng thái phòng mà một người chơi cụ thể được phép thấy. */
 export interface RoomView {
   roomId: number;
@@ -60,6 +72,10 @@ export interface RoomView {
   difficulty: Difficulty | null;
   lockedUntil: number | null;
   lastResult: LastResult | null;
+  /** Leader Board hôm nay (giờ Việt Nam): mọi người đang ở trong phòng, đã xếp hạng (chưa thắng ván nào: 0) */
+  leaderboard: LeaderboardEntry[];
+  /** Hạng 1–3 có vương miện, theo tên (tên trong phòng không trùng nhau), để vẽ khung thẻ tên ở Sảnh chờ, Bàn chơi và Leader Board */
+  medals: Record<string, Medal>;
   /** chỉ có khi bạn là người tham gia ván đang diễn ra hoặc vừa kết thúc */
   game: GameView | null;
 }

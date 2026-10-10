@@ -14,6 +14,7 @@
   --accent-text: #ffffff;
   --focus: #2f6bd8;
   --switch-knob: #ffffff; /* ô đang chọn của nút giao diện sáng/tối */
+  --medal-1: #d9a400; --medal-2: #98a2ae; --medal-3: #b8692f; /* khung vàng / bạc / đồng của 3 người đầu Leader Board */
 
   --c-correct: #3c8c55;   /* xanh lá */
   --c-present: #c28e14;   /* vàng */
@@ -33,6 +34,7 @@
     --bg: #15171a; --surface: #1f2226; --surface-2: #272a2f; --text: #ebe8e1; --muted: #a4a9b0;
     --border: #353940; --cell-border: #41454c; --cell-filled: #7d828a; --key-bg: #5c616a; --key-bg-hover: #6a707a;
     --accent: #e0584a; --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25); --switch-knob: #41454c;
+    --medal-1: #f0c43c; --medal-2: #c4ccd6; --medal-3: #d98c50;
 
     /* Xám ở chế độ tối: ô "không có" tối và chữ mờ, chữ chưa đoán sáng hơn — giống Wordle, không lẫn nhau */
     --c-absent: #2b2e33; --on-absent: #9aa0a8; --absent-border: #464a52;
@@ -43,6 +45,7 @@
   --bg: #15171a; --surface: #1f2226; --surface-2: #272a2f; --text: #ebe8e1; --muted: #a4a9b0;
   --border: #353940; --cell-border: #41454c; --cell-filled: #7d828a; --key-bg: #5c616a; --key-bg-hover: #6a707a;
   --accent: #e0584a; --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25); --switch-knob: #41454c;
+  --medal-1: #f0c43c; --medal-2: #c4ccd6; --medal-3: #d98c50;
   /* Xám ở chế độ tối: ô "không có" tối và chữ mờ, chữ chưa đoán sáng hơn — giống Wordle, không lẫn nhau */
   --c-absent: #2b2e33; --on-absent: #9aa0a8; --absent-border: #464a52;
   color-scheme: dark;
@@ -334,9 +337,52 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8
 .name-tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .name-tag { padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: .85rem; font-weight: 600; overflow-wrap: anywhere; }
 .name-tag.you { border-color: var(--accent); color: var(--accent); }
+
+/* Sảnh chờ + Leader Board: hai cột cạnh nhau (điện thoại rất hẹp thì xếp chồng) */
+.lobby-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 359.98px) { .lobby-row { grid-template-columns: minmax(0, 1fr); } }
+.lobby .name-tags { padding: 8px 0 0 6px; } /* chỗ cho vương miện nhô ra ở góc trên bên trái thẻ */
+
+/* Khung vàng / bạc / đồng + vương miện cho 3 người đầu Leader Board (thẻ tên ở Sảnh chờ, ô ở Bàn chơi, dòng của Leader Board).
+   Đặt sau .you để khung theo hạng thắng viền của "bạn" (chữ vẫn màu nhấn). */
+.medal-1 { --medal: var(--medal-1); }
+.medal-2 { --medal: var(--medal-2); }
+.medal-3 { --medal: var(--medal-3); }
+.medal { position: relative; }
+.name-tag.medal, .seats .seat.taken.medal, .lb-row.medal {
+  border: 2px solid var(--medal);
+  background: color-mix(in srgb, var(--medal) 14%, var(--surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--medal) 22%, transparent);
+}
+.name-tag.medal { padding: 2px 9px; margin-left: 6px; } /* viền dày hơn 1px: giữ nguyên cỡ thẻ; cách thẻ bên trái cho vương miện */
+.crown {
+  position: absolute; top: -11px; left: -9px; width: 20px; height: 16px; transform: rotate(-24deg); pointer-events: none;
+  fill: var(--medal); stroke: color-mix(in srgb, var(--medal) 55%, #000); stroke-width: .9; stroke-linejoin: round;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / .25));
+}
+.seat .crown { top: -12px; left: -10px; width: 24px; height: 19px; }
+
+/* Leader Board: cao vừa đủ 3 dòng, còn lại cuộn trong khung */
+.leaderboard { --lb-row-h: 34px; --lb-gap: 6px; --lb-pad-top: 13px; --lb-pad-bottom: 8px; min-width: 0; }
+/* khoảng đệm trên/trái đủ cho vương miện nhô ra (khung cuộn cắt mọi thứ tràn ra ngoài) */
+.lb-list {
+  list-style: none; margin: 0; padding: var(--lb-pad-top) 6px var(--lb-pad-bottom) 12px; display: flex; flex-direction: column; gap: var(--lb-gap);
+  max-height: calc(3 * var(--lb-row-h) + 2 * var(--lb-gap) + var(--lb-pad-top) + var(--lb-pad-bottom)); overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2);
+}
+.lb-row {
+  flex: none; height: var(--lb-row-h); display: flex; align-items: center; gap: 8px; padding: 0 10px 0 8px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: .85rem; font-weight: 600;
+}
+.lb-row.you .lb-name { color: var(--accent); }
+.lb-rank { flex: none; min-width: 1.2em; text-align: center; font-size: .75rem; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-wins { flex: none; min-width: 1.6em; padding: 0 6px; border-radius: 999px; background: var(--surface-2); text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+.lb-row.medal .lb-wins { background: color-mix(in srgb, var(--medal) 30%, var(--surface)); }
+.lb-note { margin: 6px 2px 0; font-size: .75rem; line-height: 1.35; }
 .lock-badge { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--c-absent); color: #fff; font-size: .72rem; font-weight: 700; vertical-align: middle; }
 
-.seats { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.seats { list-style: none; margin: 0; padding: 6px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; } /* đệm trên: chỗ cho vương miện */
 .seat {
   width: 100%; min-height: 64px; padding: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   border: 2px dashed var(--cell-border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer;

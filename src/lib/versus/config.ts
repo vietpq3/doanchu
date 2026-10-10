@@ -34,6 +34,10 @@ export const VERSUS = {
   chatMax: 200,
   chatHistory: 50,
   chatRate: { messages: 5, windowMs: 5_000 },
+  /** Leader Board của phòng (số ván thắng trong ngày): reset lúc 00:00 giờ Việt Nam (UTC+7, không có giờ mùa hè) */
+  leaderboardUtcOffsetMs: 7 * 60 * 60_000,
+  /** Số người tối đa được nhớ trên Leader Board của một phòng (quá thì bỏ người thấp nhất) */
+  leaderboardMax: 100,
 } as const;
 
 export const roomName = (id: number) => `Room #${id}`;
