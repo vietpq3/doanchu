@@ -22,16 +22,27 @@ test('trang chủ có hai ô Chơi đơn và Đấu theo nhóm; Chơi đơn ở 
   await expect(tiles).toHaveCount(2);
 });
 
-test('nút giao diện sáng/tối trên thanh trên cùng: chưa chọn thì theo máy, chọn thì đổi ngay, nhớ cho lần sau và có ở các trang khác', async ({ game, page }) => {
+/** Mở menu ☰ ở góc trên bên phải (nếu chưa mở). */
+async function openMenu(page: import('@playwright/test').Page) {
+  const button = page.getByRole('button', { name: 'Menu' });
+  if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click();
+  await expect(page.locator('.settings-panel')).toBeVisible();
+}
+
+test('giao diện sáng/tối trong menu: chưa chọn thì theo máy, chọn thì đổi ngay, nhớ cho lần sau và có ở các trang khác', async ({ game, page }) => {
   const html = page.locator('html');
   const radio = (name: string) => page.getByRole('radio', { name });
-  const choose = (name: string) => page.locator(`label[title="${name}"]`).click(); // ô radio ẩn đi, bấm vào biểu tượng
+  const choose = async (name: string) => {
+    await openMenu(page);
+    await page.locator(`label[title="${name}"]`).click(); // ô radio ẩn đi, bấm vào biểu tượng
+  };
   const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   const LIGHT_BG = 'rgb(246, 244, 239)';
   const DARK_BG = 'rgb(21, 23, 26)';
 
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
+  await openMenu(page);
   await expect(radio('Giao diện sáng')).toBeChecked();
   await expect(html).not.toHaveAttribute('data-theme');
   await page.emulateMedia({ colorScheme: 'dark' }); // chưa chọn: đổi theo máy
@@ -46,6 +57,7 @@ test('nút giao diện sáng/tối trên thanh trên cùng: chưa chọn thì th
 
   await game.open(); // trang khác: vẫn tối, nút cũng có ở đây
   await expect(html).toHaveAttribute('data-theme', 'dark');
+  await openMenu(page);
   await expect(radio('Giao diện tối')).toBeChecked();
   await page.reload();
   await expect(html).toHaveAttribute('data-theme', 'dark');
@@ -55,7 +67,87 @@ test('nút giao diện sáng/tối trên thanh trên cùng: chưa chọn thì th
   await expect(html).toHaveAttribute('data-theme', 'light');
   expect(await background()).toBe(LIGHT_BG);
   await page.goto('/');
+  await openMenu(page);
   await expect(radio('Giao diện sáng')).toBeChecked();
+});
+
+test('menu: bấm ra ngoài hoặc Esc thì đóng; độ khó mặc định Thường, chọn thì nhớ (cookie)', async ({ page }) => {
+  await page.goto('/');
+  const menu = page.getByRole('button', { name: 'Menu' });
+  const panel = page.locator('.settings-panel');
+  const radio = (name: string) => panel.getByRole('radio', { name: new RegExp(`^${name}`) });
+
+  await openMenu(page);
+  await expect(panel.getByRole('radio')).toHaveCount(5); // 2 giao diện + 3 độ khó
+  await expect(radio('Thường')).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await expect(menu).toBeFocused();
+
+  await openMenu(page);
+  await radio('Khó').check();
+  await expect(radio('Khó')).toBeChecked();
+  await page.mouse.click(8, 600); // bấm ra ngoài bảng menu
+  await expect(panel).toHaveCount(0);
+  expect((await page.context().cookies()).find((c) => c.name === 'dc_difficulty')?.value).toBe('2');
+
+  await page.reload();
+  await openMenu(page);
+  await expect(radio('Khó')).toBeChecked();
+});
+
+test('độ khó khi chơi đơn: ván mới theo độ khó đã chọn; đổi độ khó giữa ván thì bắt đầu ván mới trong khoảng số của độ khó mới', async ({ game, page, request }) => {
+  const panel = page.locator('.settings-panel');
+  const radio = (name: string) => panel.getByRole('radio', { name: new RegExp(`^${name}`) });
+  const { keywordCounts } = (await (await request.post('/api/games', { data: {} })).json()) as { keywordCounts: number[] }; // cookie riêng, không đổi ván của trang
+  const keywordNo = async () => Number((await game.keywordButton.innerText()).replace('#', ''));
+  await page.goto('/');
+  await openMenu(page);
+  await radio('Khó').check();
+
+  await game.open();
+  await expect(game.meta).toContainText('Khó · Lượt 1/6');
+  expect(await keywordNo()).toBeLessThanOrEqual(keywordCounts[1]);
+
+  // đang chơi dở (đã đoán một lượt): menu không khóa; chọn Thường thì menu đóng, bỏ ván này và bắt đầu ván Thường
+  const structure = await game.structure();
+  await game.guessScored(structure.map((n) => 'b'.repeat(n)).join(' '), 0);
+  await expect(game.meta).toContainText('Khó · Lượt 2/6');
+  await openMenu(page);
+  await expect(panel.locator('.lock-badge')).toHaveCount(0);
+  await expect(radio('Khó')).toBeChecked();
+  await expect(panel.locator('.settings-note')).toContainText('Đổi độ khó sẽ bắt đầu ván mới');
+  await radio('Thường').click(); // không dùng check(): menu đóng ngay sau khi chọn
+  await expect(panel).toHaveCount(0);
+  await expect(game.meta).toContainText('Thường · Lượt 1/6');
+  await expect(page.locator('.row .cell[data-status]')).toHaveCount(0);
+  expect(await keywordNo()).toBeLessThanOrEqual(keywordCounts[0]); // từ khóa trong khoảng số của Thường
+  await page.reload(); // ván mới được nhớ
+  await expect(game.meta).toContainText('Thường · Lượt 1/6');
+
+  // Rất khó: ván mới, hộp thoại chọn số theo khoảng của Rất khó (toàn bộ từ khóa)
+  await openMenu(page);
+  await radio('Rất khó').click();
+  await expect(game.meta).toContainText('Rất khó · Lượt 1/6');
+  await game.keywordButton.click();
+  await expect(game.keywordDialog).toContainText(`Độ khó Rất khó có các từ khóa số 1 đến ${keywordCounts[2]}.`);
+  await page.keyboard.press('Escape');
+
+  // ván chưa đoán lượt nào: đổi độ khó ở trang chủ rồi quay lại thì có ván mới theo độ khó vừa chọn
+  await page.goto('/');
+  await openMenu(page);
+  await radio('Thường').check();
+  await game.open();
+  await expect(game.meta).toContainText('Thường · Lượt 1/6');
+
+  // chọn từ khóa theo số (#N): ván không ghi độ khó
+  await page.goto('/solo?id=1');
+  await expect(game.keywordButton).toHaveText('#1');
+  await expect(game.meta).not.toContainText('Thường');
+  await openMenu(page);
+  await expect(panel.locator('.settings-note')).toContainText('Ván này chọn từ khóa theo số #1.');
+  await expect(radio('Thường')).toBeChecked(); // độ khó đang chọn, đổi được (bắt đầu ván mới)
+  await expect(radio('Khó')).toBeEnabled();
 });
 
 test('thanh trên cùng ở màn hình hẹp: không tràn ngang, tên trang không bị cắt, các nút không đè lên nhau', async ({ game, page }) => {
@@ -63,7 +155,7 @@ test('thanh trên cùng ở màn hình hẹp: không tràn ngang, tên trang kh�
     await page.setViewportSize({ width, height: 700 });
     for (const open of [() => page.goto('/'), () => game.open()]) {
       await open();
-      await expect(page.locator('.theme-switch')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Menu' })).toBeVisible();
       const layout = await page.evaluate(() => {
         const bar = document.querySelector('.topbar .wrap')!;
         const brand = document.querySelector('.brand')!;
@@ -75,6 +167,12 @@ test('thanh trên cùng ở màn hình hẹp: không tràn ngang, tên trang kh�
         };
       });
       expect(layout, `${width}px ${page.url()}`).toEqual({ overflow: false, brandCut: false, overlap: false });
+      // bảng menu nằm trọn trong màn hình
+      await openMenu(page);
+      const panel = (await page.locator('.settings-panel').boundingBox())!;
+      expect(panel.x, `${width}px menu`).toBeGreaterThanOrEqual(0);
+      expect(panel.x + panel.width, `${width}px menu`).toBeLessThanOrEqual(width);
+      await page.keyboard.press('Escape');
     }
   }
 });
@@ -215,7 +313,7 @@ test('số thứ tự từ khóa (#N) ở góc trên bên trái; bấm vào đ�
   await game.keywordButton.click();
   await expect(game.keywordDialog).toBeVisible();
   await expect(game.keywordDialog.locator('#keyword-no')).toBeFocused();
-  const count = Number(/từ 1 đến (\d+)/.exec(await game.keywordDialog.innerText())![1]);
+  const count = Number(/Độ khó Thường có các từ khóa số 1 đến (\d+)/.exec(await game.keywordDialog.innerText())![1]); // chưa chọn độ khó = Thường
   expect(count).toBeGreaterThan(1);
 
   // số sai không gửi lên, hộp thoại giữ nguyên
@@ -223,7 +321,7 @@ test('số thứ tự từ khóa (#N) ở góc trên bên trái; bấm vào đ�
   for (const bad of ['0', String(count + 1), 'abc', '']) {
     await dialogInput.fill(bad);
     await dialogInput.press('Enter');
-    await expect(game.keywordDialog.getByRole('alert')).toHaveText(`Nhập số từ 1 đến ${count}`);
+    await expect(game.keywordDialog.getByRole('alert')).toHaveText(`Độ khó Thường: nhập số từ 1 đến ${count}`);
   }
   await expect(game.keywordDialog).toBeVisible();
 
@@ -305,9 +403,12 @@ test('/solo?id= không hợp lệ hoặc ngoài khoảng: bỏ qua, vào ván b�
 
 test('chọn số khi ván đã kết thúc; số ngoài khoảng bị server từ chối; cùng số luôn ra cùng từ khóa', async ({ game, page, request }) => {
   const created = await (await request.post('/api/games', { data: {} })).json();
-  const { keywordCount: count } = created as { keywordCount: number };
+  const { keywordCounts } = created as { keywordCounts: [number, number, number] };
+  const [count, , total] = keywordCounts; // chưa chọn độ khó = Thường; Rất khó = toàn bộ từ khóa
+  expect(keywordCounts[0]).toBeLessThanOrEqual(keywordCounts[1]);
+  expect(keywordCounts[1]).toBeLessThanOrEqual(total);
 
-  // số cuối cùng chọn được, số vượt khoảng bị từ chối
+  // số cuối cùng của độ khó chọn được, số vượt khoảng bị từ chối
   const last = await request.post('/api/games', { data: { number: count } });
   expect(last.status()).toBe(201);
   expect((await last.json()).keywordNo).toBe(count);
@@ -316,7 +417,12 @@ test('chọn số khi ván đã kết thúc; số ngoài khoảng bị server t�
     expect([number, res.status()]).toEqual([number, 400]);
   }
   const outOfRange = await request.post('/api/games', { data: { number: count + 1 } });
-  expect((await outOfRange.json()).message).toBe(`Không có từ khóa số ${count + 1}; chọn số từ 1 đến ${count}`);
+  expect((await outOfRange.json()).message).toBe(`Độ khó Thường có từ khóa số 1 đến ${count}; không có số ${count + 1}`);
+  // Rất khó (cookie): chọn được tới số cuối cùng của toàn bộ từ khóa
+  const veryHard = { Cookie: 'dc_difficulty=3' };
+  expect((await (await request.post('/api/games', { data: { number: total }, headers: veryHard })).json()).keywordNo).toBe(total);
+  const beyond = await request.post('/api/games', { data: { number: total + 1 }, headers: veryHard });
+  expect((await beyond.json()).message).toBe(`Độ khó Rất khó có từ khóa số 1 đến ${total}; không có số ${total + 1}`);
 
   // chơi hết 6 lượt để lộ từ khóa; cùng số thì cùng từ khóa, số khác thì từ khóa khác
   async function answerOf(number: number) {

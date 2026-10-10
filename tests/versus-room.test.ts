@@ -146,7 +146,7 @@ describe('Start và đếm ngược', () => {
     change(m);
     expect(view(m, 'a')).toMatchObject({ phase: 'idle', countdownEndsAt: null });
     expect(m.nextWakeAt()).toBeNull();
-    expect(m.tick(T0 + 5000)).toEqual({ needAnswer: false, reviewWord: null });
+    expect(m.tick(T0 + 5000)).toMatchObject({ needAnswer: false, reviewWord: null });
     expect(view(m, 'a').phase).toBe('idle');
     expect(view(m, 'a').game).toBeNull();
   });
@@ -202,12 +202,52 @@ describe('Start và đếm ngược', () => {
   test('từ khóa chọn sẵn (REVIEW_MODE) đi theo lần Start và bị xóa khi hủy', () => {
     const m = twoAtTable();
     m.start('a', T0, 'vũ trụ');
-    expect(m.tick(T0 + 5000)).toEqual({ needAnswer: true, reviewWord: 'vũ trụ' });
+    expect(m.tick(T0 + 5000)).toEqual({ needAnswer: true, reviewWord: 'vũ trụ', difficulty: 1 });
     const m2 = twoAtTable();
     m2.start('a', T0, 'vũ trụ');
     m2.stand('b');
     m2.start('a', T0 + 10); // hết người: không đủ 2
     expect(m2.state.reviewWord).toBeNull();
+  });
+});
+
+describe('độ khó (người bấm Start chọn)', () => {
+  test('đi theo lần Start: ai trong phòng cũng thấy lúc đếm ngược; worker chọn từ theo độ khó đó; ván giữ độ khó', () => {
+    const m = twoAtTable();
+    join(m, 'c', 'Chi', T0); // ở sảnh
+    expect(view(m, 'a').difficulty).toBeNull(); // phòng rảnh
+    m.start('b', T0, undefined, 3);
+    for (const id of ['a', 'b', 'c']) expect(view(m, id).difficulty, id).toBe(3);
+    expect(m.tick(T0 + 5000)).toEqual({ needAnswer: true, reviewWord: null, difficulty: 3 });
+    expect(view(m, 'c').difficulty).toBe(3); // đang chọn từ khóa
+    m.beginMatch(ANSWER, DEFS, T0 + 5000);
+    expect(view(m, 'a').game!.difficulty).toBe(3);
+    expect(view(m, 'c')).toMatchObject({ difficulty: 3, game: null }); // người ở sảnh chỉ thấy độ khó, không thấy ván
+    m.guess('a', ANSWER, T0 + 6000);
+    expect(view(m, 'a').difficulty).toBeNull(); // ván xong, phòng khóa vài giây
+    expect(view(m, 'a').game!.difficulty).toBe(3); // màn kết quả vẫn có
+  });
+
+  test('không gửi độ khó thì dùng Thường; hủy đếm ngược rồi Start lại thì theo người bấm lần sau', () => {
+    const m = twoAtTable();
+    m.start('a', T0, undefined, 2);
+    m.stand('b'); // hủy
+    m.sit('b', 1);
+    m.start('b', T0 + 1000);
+    expect(view(m, 'a').difficulty).toBe(1);
+  });
+
+  test('trạng thái do bản cũ lưu (chưa có độ khó) dùng Thường', () => {
+    const m = twoAtTable();
+    m.start('a', T0);
+    m.tick(T0 + 5000);
+    m.beginMatch(ANSWER, DEFS, T0 + 5000);
+    const old = JSON.parse(JSON.stringify(m.state));
+    delete old.difficulty;
+    delete old.match.difficulty;
+    const restored = new RoomMachine(old, () => true);
+    expect(restored.state.difficulty).toBe(1);
+    expect(restored.viewFor('a', T0 + 6000)!.game!.difficulty).toBe(1);
   });
 });
 

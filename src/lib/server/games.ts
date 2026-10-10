@@ -1,4 +1,5 @@
 import 'server-only';
+import { DEFAULT_DIFFICULTY, difficultyName, parseDifficulty, type Difficulty } from '@/lib/game/difficulty';
 import { hintCandidates } from '@/lib/game/hints';
 import { evaluateGuess, MAX_GUESS_LENGTH } from '@/lib/game/guess';
 import { MAX_KEYWORD_NO } from '@/lib/game/keywords';
@@ -31,13 +32,16 @@ async function maybePurge() {
 }
 
 /**
- * Tạo ván mới với từ khóa ngẫu nhiên, hoặc đúng từ khóa số `number` (1 đến tổng số từ khóa) do người chơi chọn.
+ * Tạo ván mới với từ khóa ngẫu nhiên theo độ khó `difficulty` (1–3; không hợp lệ hoặc bỏ trống thì dùng mặc định),
+ * hoặc đúng từ khóa số `number` do người chơi chọn. Có `difficulty` thì số phải nằm trong khoảng của độ khó đó
+ * (hộp thoại chọn số); không có (link chia sẻ /solo?id=N) thì được mọi số từ 1 đến tổng số từ khóa.
  * `word` (chọn sẵn từ khóa) chỉ dùng được khi REVIEW_MODE=1 và được ưu tiên hơn `number`.
  */
-export async function createGame(opts: { word?: string; number?: unknown } = {}): Promise<PublicGame> {
+export async function createGame(opts: { word?: string; number?: unknown; difficulty?: unknown } = {}): Promise<PublicGame> {
   const repo = getRepository();
   let answer: string;
   let keywordNo: number | null;
+  let difficulty: Difficulty | null = null;
   if (opts.word !== undefined) {
     if (!config.reviewMode) throw new GameError(403, 'review_disabled', 'Không được chọn sẵn từ khóa');
     const w = normalizeWord(String(opts.word).slice(0, MAX_GUESS_LENGTH));
@@ -50,16 +54,24 @@ export async function createGame(opts: { word?: string; number?: unknown } = {})
     if (no !== undefined && (typeof no !== 'number' || !Number.isInteger(no) || no < 1 || no > MAX_KEYWORD_NO)) {
       throw new GameError(400, 'bad_request', 'Số từ khóa không hợp lệ');
     }
-    const picked = await repo.pickKeyword(no);
+    if (no === undefined) {
+      difficulty = parseDifficulty(opts.difficulty) ?? DEFAULT_DIFFICULTY;
+    } else if (opts.difficulty !== undefined) {
+      // chọn số theo độ khó đang chọn: chỉ được các số của độ khó đó
+      const d = parseDifficulty(opts.difficulty) ?? DEFAULT_DIFFICULTY;
+      const max = (await repo.keywordCounts())[d - 1];
+      if (no > max) throw new GameError(400, 'keyword_not_found', `Độ khó ${difficultyName(d)} có từ khóa số 1 đến ${max}; không có số ${no}`);
+    }
+    const picked = await repo.pickKeyword(no, difficulty ?? undefined);
     if (!picked) {
       if (no === undefined) throw new Error('Bộ từ khóa trống');
-      throw new GameError(400, 'keyword_not_found', `Không có từ khóa số ${no}; chọn số từ 1 đến ${await repo.keywordCount()}`);
+      throw new GameError(400, 'keyword_not_found', `Không có từ khóa số ${no}; chọn số từ 1 đến ${(await repo.keywordCounts())[2]}`);
     }
     answer = picked.word;
     keywordNo = picked.no;
   }
   await maybePurge();
-  return toPublic(await repo.insertGame(answer, keywordNo));
+  return toPublic(await repo.insertGame(answer, keywordNo, difficulty));
 }
 
 /** Ván đang lưu, hoặc null nếu id không hợp lệ / đã bị xoá. */
@@ -122,7 +134,8 @@ async function toPublic(game: GameRecord): Promise<PublicGame> {
     hints: game.hints.map((index) => ({ index, ch: answer.cells[index] })),
     maxHints: config.maxHints,
     keywordNo: game.keywordNo,
-    keywordCount: await getRepository().keywordCount(),
+    difficulty: game.difficulty,
+    keywordCounts: await getRepository().keywordCounts(),
     over: game.over,
     won: game.won,
   };

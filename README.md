@@ -16,7 +16,7 @@ Website SSR viết bằng **Next.js 16 (App Router) + React 19 + TypeScript**, d
 npm install
 cp .dev.vars.example .dev.vars  # điền SUPABASE_URL, SUPABASE_SECRET_KEY, SUPABASE_DB_URL
 npm run db:migrate              # tạo bảng words, games (hoặc dán supabase/migrations/*.sql vào SQL Editor)
-npm run db:seed                 # trích xuất từ điển nguồn, nạp 47.914 từ + giải nghĩa vào bảng words, rồi đánh số từ khóa (36.362 từ)
+npm run db:seed                 # trích xuất từ điển nguồn, nạp 47.644 từ + giải nghĩa + mức từ vào bảng words, rồi đánh số từ khóa (36.110 từ)
 ```
 
 > **Secret chỉ để trong `.dev.vars`, không dùng `.env` / `.env.local`.** Khi build cho Cloudflare, OpenNext gói mọi file `.env*` của Next.js vào code của Worker, nên secret để ở đó sẽ bị tải lên cùng code. `.dev.vars` chỉ wrangler, `npm run dev` và các script đọc; file này không commit.
@@ -84,13 +84,14 @@ shasum -a 256 ../../database/minhqnd_dictionary.db
 
 ### Bộ từ khóa
 
-`data/keywords.json` có **36.362 từ** (`words`), sinh bằng `npm run keywords` (`scripts/export-keywords.ts`). Một mục từ của từ điển là từ khóa khi:
+`data/keywords.json` có **36.110 từ** (`words`), sinh bằng `npm run keywords` (`scripts/export-keywords.ts`). Một mục từ của từ điển là từ khóa khi:
 - là từ ghép (2 âm tiết trở lên) chỉ gồm chữ cái tiếng Việt viết thường (`keywordInfo()` trong `src/lib/game/keywords.ts`);
 - có **4–12 chữ cái** (`KEYWORD_LETTERS`): ô chữ chia đều theo chiều ngang nên từ dài hơn sẽ ra ô quá nhỏ trên điện thoại (12 chữ cái ở màn hình 360px còn ô cỡ 20px);
 - có giải nghĩa tiếng Việt để hiện ở màn hình kết thúc;
+- không nằm trong **danh sách xóa** `data/word-blocklist.txt` (từ thô tục…, xem bên dưới);
 - **không bị danh sách loại trừ loại** (xem bên dưới).
 
-Trong 47.914 từ ghép của từ điển, 7.205 từ không đạt ba điều kiện đầu (4.944 chưa có giải nghĩa, 2.112 dài hơn 12 chữ cái, 149 ngắn hơn 4); 40.709 từ còn lại bị danh sách loại trừ loại 4.347 từ, còn 36.362 từ khóa: 32.974 từ 2 âm tiết, 2.609 từ 3 âm tiết và 779 từ 4–5 âm tiết (phần lớn là thành ngữ, tục ngữ). Chọn ngẫu nhiên, không ưu tiên từ thông dụng, nên có cả từ cổ, từ chuyên ngành và từ mượn.
+Trong 47.914 từ ghép của từ điển, 7.205 từ không đạt ba điều kiện đầu (4.944 chưa có giải nghĩa, 2.112 dài hơn 12 chữ cái, 149 ngắn hơn 4); trong 40.709 từ còn lại, 270 từ thuộc danh sách xóa và 4.329 từ bị danh sách loại trừ loại, còn 36.110 từ khóa: 32.748 từ 2 âm tiết, 2.592 từ 3 âm tiết và 770 từ 4–5 âm tiết (phần lớn là thành ngữ, tục ngữ). Mỗi từ khóa có một **mức** (1–3); ván ngẫu nhiên chỉ chọn trong các mức mà độ khó cho phép (xem *Mức từ và độ khó* bên dưới).
 
 > Từ điển nguồn lưu **mọi** mục từ bằng chữ thường (không có mục từ nào viết hoa, kể cả "hà nội", "việt nam"), nên bộ lọc "chữ thường" của `keywordInfo()` không loại được tên riêng. Tên riêng được loại bằng danh sách loại trừ.
 
@@ -100,7 +101,7 @@ Cấu hình ở `data/keyword-exclusions.json` (kiểm tra chặt: tuỳ chọn 
 
 | Lý do | Cách nhận diện | Số từ |
 |---|---|---|
-| `auxiliary` (từ phụ trợ) | Nghĩa hiển thị mang mã từ loại `X` do nguồn trong `auxiliary.sources` gắn (mặc định TVTD, tudientv.com). **X của Wiktionary không tính**: đó chỉ là "chưa phân loại" (97% từ có cả X của Wiktionary lẫn nghĩa TVTD thì TVTD gắn là tính/danh/động từ, vd "nhẵn bóng", "hữu danh"). `match`: `any` (một nghĩa là đủ) hoặc `all`. | 418 |
+| `auxiliary` (từ phụ trợ) | Nghĩa hiển thị mang mã từ loại `X` do nguồn trong `auxiliary.sources` gắn (mặc định TVTD, tudientv.com). **X của Wiktionary không tính**: đó chỉ là "chưa phân loại" (97% từ có cả X của Wiktionary lẫn nghĩa TVTD thì TVTD gắn là tính/danh/động từ, vd "nhẵn bóng", "hữu danh"). `match`: `any` (một nghĩa là đủ) hoặc `all`. | 400 |
 | `proper_noun` (danh từ riêng) | Chỉ xét từ có nghĩa danh từ (`nounsOnly`). Ba tín hiệu: (1) nhãn `Np` của TVTD; (2) nghĩa đầu là mẫu câu địa danh/dân tộc ("Một xã thuộc huyện X, tỉnh Y", "Sông ở…") **và** nhắc một tên viết hoa; (3) quét toàn bộ giải nghĩa + ví dụ của từ điển (~700 nghìn đoạn, ~4 giây): từ xuất hiện dạng "Hà Nội" nhiều hơn "hà nội" (`capitalized`). | 3.929 |
 | `manual` | Nằm trong danh sách `exclude`. | 0 |
 
@@ -111,13 +112,43 @@ Quy trình đổi danh sách loại trừ:
 2. `npm run keywords` → in số từ bị loại theo lý do; mở `var/keyword-exclusions-report.json` (không commit) xem từng từ bị loại kèm bằng chứng để duyệt.
 3. `npm run db:migrate` (lần đầu, thêm cột `excluded_reason`) rồi `npm run db:seed`.
 
-**`data/keyword-auxiliary-candidates.txt`** (sinh cùng lúc, mỗi dòng một từ): 2.985 từ khóa còn lại có nghĩa `X` từ nguồn chưa nằm trong `auxiliary.sources`, tức X của Wiktionary. Chưa loại; để xem và cân nhắc loại sau. Muốn loại cả nhóm: thêm `"Wiktionary"` vào `auxiliary.sources`; muốn loại từng từ: chép vào `exclude`.
+**`data/keyword-auxiliary-candidates.txt`** (sinh cùng lúc, mỗi dòng một từ): 2.964 từ khóa còn lại có nghĩa `X` từ nguồn chưa nằm trong `auxiliary.sources`, tức X của Wiktionary. Chưa loại; để xem và cân nhắc loại sau. Muốn loại cả nhóm: thêm `"Wiktionary"` vào `auxiliary.sources`; muốn loại từng từ: chép vào `exclude`.
 
 Đổi danh sách loại trừ làm số `#N` của các từ phía sau dịch (xem bên dưới).
 
-**Số thứ tự (`keyword_no`).** Từ khóa được đánh số 1..N theo vị trí trong các dòng `is_keyword` của bảng `words` khi xếp theo cột `word` (đúng thứ tự bảng hiện trên Supabase: lọc `is_keyword = true` thì dòng thứ 300 là `#300`). Số do hàm SQL `renumber_keywords()` điền, `npm run db:seed` tự gọi sau khi nạp từ; nên số ổn định khi nạp lại cùng bộ từ khóa, còn thêm/bớt từ khóa thì số của các từ phía sau dịch theo. Muốn xem trên Supabase: bảng `words`, lọc `keyword_no` không rỗng, sắp theo `keyword_no`.
+#### Danh sách xóa (từ thô tục)
 
-Khi tạo ván, app gọi hàm SQL `pick_keyword(n)` (migration `20261009130000_keyword_no.sql`) để lấy từ khóa số `n`, hoặc một từ ngẫu nhiên khi bỏ trống `n`, ngay trong CSDL, không tải cả danh sách về: với hàng chục nghìn từ thì tải về sẽ cần ~40 request mỗi lần, vượt giới hạn của Cloudflare Workers. Vì vậy phải chạy `npm run db:migrate` **trước** khi chạy app/deploy bản này, rồi `npm run db:seed` để đánh số. (Hàm `random_keyword()` của migration `20261009120000` là bản cũ, bản này không còn dùng; có thể xoá sau khi mọi bản deploy đã chuyển sang `pick_keyword`.)
+`data/word-blocklist.txt` (mỗi dòng một từ, dòng `#` là chú thích; đọc bằng `scripts/word-blocklist.ts`): 270 từ thô tục, tục tĩu, chửi rủa, xúc phạm, tình dục, mại dâm. Các từ này **bị xóa hẳn khỏi bảng `words`**, không chỉ thôi làm từ khóa: `npm run keywords` bỏ chúng khỏi `keywords.json` (không có cả trong mục `excluded`), `npm run db:seed` không nạp và xóa chúng nếu đã có. Ván cũ có đáp án là các từ này vẫn chơi tiếp được (cột `games.answer` là chữ), chỉ không còn giải nghĩa.
+
+Danh sách lấy từ nhóm "Thô tục, nhạy cảm" của bản rà soát kho từ vựng (326 từ, xem bên dưới), đã duyệt tay: 57 từ thường bị xếp nhầm vào nhóm đó (vd "đê mạt", "chửi bới", "ngoại tình", "đi ngoài") được giữ lại và xếp mức lại trong `scripts/vocab-review/overrides.tsv`. Thêm/bớt từ: sửa file rồi `npm run keywords` và `npm run db:seed` (số `#N` dịch theo).
+
+#### Mức từ và độ khó
+
+Mỗi từ khóa có một **mức** trong `data/keyword-tiers.json` (`npm run db:seed` nạp vào cột `words.keyword_tier`):
+
+| Mức | Nghĩa | Số từ khóa |
+|---|---|---|
+| 1 | Phù hợp nhất: từ thông dụng, hiện đại; Hán Việt thường dùng | 16.866 |
+| 2 | Trung bình: Hán Việt cũ, văn chương; thuần Việt hiếm gặp; phương ngữ; từ lóng; thuật ngữ chuyên sâu | 17.088 |
+| 3 | Ít phù hợp: phiên âm chuyên ngành, biến thể chính tả, cụm từ không thành từ… (tên riêng, từ phụ trợ đã bị loại trừ từ trước) | 2.156 |
+
+Độ khó người chơi chọn ở menu ☰ quyết định ván ngẫu nhiên được chọn từ những mức nào: **Thường** = mức 1 (mặc định), **Khó** = mức 1 + 2, **Rất khó** = mức 1 + 2 + 3. Từ khóa chưa có mức (vd từ mới thêm sau lần rà soát) coi như mức 3.
+
+Từ khóa được **đánh số theo mức trước** (mức 1 là `#1`–`#16866`, mức 2 tiếp theo, mức 3 cuối), nên mỗi độ khó là một khoảng số liền nhau bắt đầu từ 1 và cùng một số luôn là cùng một từ:
+
+| Độ khó | Từ khóa số |
+|---|---|
+| Thường | 1 – 16.866 |
+| Khó | 1 – 33.954 |
+| Rất khó | 1 – 36.110 |
+
+Hộp thoại chọn số (nút `#N`) chỉ cho chọn trong khoảng của độ khó đang chọn (server cũng kiểm tra, theo cookie độ khó). Link chia sẻ `/solo?id=N` thì mở được mọi số, để người nhận chơi đúng từ được gửi dù đang chọn độ khó nào. API trả `keywordCounts` (số từ khóa của từng độ khó) trong trạng thái ván.
+
+Mức do AI xếp (Claude Haiku, bộ tiêu chí `scripts/vocab-review/rubric.md`) trong đợt rà soát toàn bộ 40.709 từ (từ khóa + từ bị loại); báo cáo ở `docs/vocabulary-review.md`, ngoài repo. Quy trình: `scripts/vocab-review/prepare.ts` (tín hiệu: tần suất trong 1 triệu câu báo 2022 của Leipzig, tỉ lệ viết hoa, nhãn từ điển; chia lô) → AI xếp từng lô → `scripts/vocab-review/merge.ts` (kiểm tra, gộp, áp dụng `overrides.tsv`, bỏ danh sách xóa, ghi `data/keyword-tiers.json`). Kết quả AI từng lô nằm ở `var/vocab-review/` (không commit), nên `data/keyword-tiers.json` là bản lưu chính thức; sửa mức một từ thì thêm dòng vào `overrides.tsv` (cần `var/vocab-review/` để chạy lại `merge.ts`) hoặc sửa thẳng file JSON.
+
+**Số thứ tự (`keyword_no`).** Từ khóa được đánh số 1..N theo vị trí trong các dòng `is_keyword` của bảng `words` khi xếp theo **mức** (`keyword_tier`, chưa có mức coi như 3) rồi theo cột `word` (migration `20261010140000_keyword_no_by_tier.sql`; trước đó chỉ xếp theo `word`). Số do hàm SQL `renumber_keywords()` điền, `npm run db:seed` tự gọi sau khi nạp từ; nên số ổn định khi nạp lại cùng bộ từ khóa, còn thêm/bớt từ khóa thì số của các từ phía sau dịch theo. Đổi mức của từ cũng làm số dịch theo. Muốn xem trên Supabase: bảng `words`, lọc `keyword_no` không rỗng, sắp theo `keyword_no`.
+
+Khi tạo ván, app gọi hàm SQL `pick_keyword(n, difficulty)` (migration `20261009130000_keyword_no.sql`, thêm độ khó ở `20261010130000_keyword_tier.sql`) để lấy từ khóa số `n`, hoặc khi bỏ trống `n` thì một từ ngẫu nhiên có `keyword_tier <= difficulty` (mặc định 1; chưa có từ nào được xếp mức thì chọn trong toàn bộ từ khóa), ngay trong CSDL, không tải cả danh sách về: với hàng chục nghìn từ thì tải về sẽ cần ~40 request mỗi lần, vượt giới hạn của Cloudflare Workers. Vì vậy phải chạy `npm run db:migrate` **trước** khi chạy app/deploy bản này, rồi `npm run db:seed` để đánh số. (Hàm `random_keyword()` của migration `20261009120000` là bản cũ, bản này không còn dùng; có thể xoá sau khi mọi bản deploy đã chuyển sang `pick_keyword`.)
 
 ## Kiểm thử
 
@@ -138,10 +169,13 @@ Mỗi lần chạy test E2E tạo vài ván thật trong bảng `games`; ván c�
 ## Luật chơi đã chốt
 
 - **Trang chủ (`/`):** chỉ có hai ô vuông **Chơi đơn** (→ `/solo`) và **Đấu theo nhóm** (→ `/rooms`, xem [Đấu theo nhóm](#đấu-theo-nhóm)). Màn Chơi đơn có nút **Trang chủ** cạnh nút `?` ở góc trên bên phải. Các luật bên dưới là của Chơi đơn.
-- **Giao diện sáng/tối:** nút ☀/☾ (hai radio button trông như một công tắc) ở thanh trên cùng của mọi trang.
-  - Chưa chọn thì theo cài đặt của máy; chọn thì nhớ cho lần sau (`localStorage` key `doanchu-theme`).
-  - Một đoạn script nhỏ trong `<head>` (`src/lib/themeScript.ts`) đặt màu trước khi trang hiện ra, nên tải lại trang không bị nháy màu.
-  - Trên điện thoại (dưới 480px), hai bên thanh trên chỉ rộng vừa các nút và tên trang nằm giữa phần còn lại (từ 480px trở lên vẫn đúng giữa), để đủ chỗ cho nút này mà tên trang không bị cắt (kể cả màn hình 320px).
+- **Menu ☰** ở góc trên bên phải mọi trang (`SettingsMenu.tsx`): bấm để mở bảng có hai mục **Giao diện** và **Độ khó**; bấm ra ngoài hoặc Esc thì đóng.
+  - **Giao diện sáng/tối:** nút ☀/☾ (hai radio button trông như một công tắc). Chưa chọn thì theo cài đặt của máy; chọn thì nhớ cho lần sau (`localStorage` key `doanchu-theme`). Một đoạn script nhỏ trong `<head>` (`src/lib/themeScript.ts`) đặt màu trước khi trang hiện ra, nên tải lại trang không bị nháy màu.
+  - **Độ khó:** Thường (mặc định) → Khó → Rất khó, tương ứng từ khóa mức 1 / 1+2 / 1+2+3 (xem [Mức từ và độ khó](#mức-từ-và-độ-khó)). Lưu trong cookie `dc_difficulty` để server đọc khi tạo ván mới.
+    - **Chơi đơn:** đổi được bất cứ lúc nào, kể cả đang chơi dở; chọn độ khó khác thì menu đóng và **bắt đầu ngay ván mới** (như New game, không hỏi xác nhận) với từ khóa ngẫu nhiên trong khoảng số của độ khó mới. Ván đang dở mà chưa đoán lượt nào thì đổi độ khó ở trang chủ rồi vào lại cũng được ván mới theo độ khó vừa chọn.
+    - **Đấu theo nhóm:** đang trong ván thì không đổi được (các lựa chọn bị tắt và hiện độ khó của ván).
+    - Độ khó của ván hiện cạnh số lượt (`Khó · Lượt 2/6`).
+  - Trên điện thoại (dưới 480px), hai bên thanh trên chỉ rộng vừa các nút và tên trang nằm giữa phần còn lại (từ 480px trở lên vẫn đúng giữa), để tên trang không bị cắt (kể cả màn hình 320px).
 - **Màu:**
   - xanh lá: đúng chữ, đúng dấu, đúng vị trí
   - vàng: đúng chữ, đúng dấu, sai vị trí
@@ -158,7 +192,7 @@ Mỗi lần chạy test E2E tạo vài ván thật trong bảng `games`; ván c�
 - **Kiểu dấu cũ** (hòa, khỏe, thúy) cho từ khóa, chữ người chơi gõ và phần giải nghĩa; gõ kiểu mới vẫn được tính đúng.
   - Đổi kiểu dấu: sửa `DEFAULT_STYLE` trong `src/lib/game/vietnamese.ts`, rồi chạy lại `npm run db:seed`.
 - **Cách gõ:** gõ vào ô nhập bằng bộ gõ tiếng Việt của máy (Unikey/EVKey, Telex/VNI của macOS, bàn phím iOS/Android). Game không tự xử lý Telex. Bên dưới ô nhập là bảng chữ cái tô màu theo kết quả.
-- **Số thứ tự từ khóa:** số `#N` hiện ở góc trên bên trái, là số của từ khóa đang chơi (xem [Bộ từ khóa](#bộ-từ-khóa)). Bấm vào đó mở hộp thoại chọn số (từ 1 đến tổng số từ khóa): nhập số rồi bấm **Bắt đầu** thì bỏ ván hiện tại và bắt đầu ván mới với đúng từ khóa đó; cùng số thì luôn ra cùng từ khóa. Dùng được cả khi ván đã kết thúc. Server từ chối số ngoài khoảng (`keyword_not_found`) hoặc không phải số nguyên (`bad_request`). Từ khóa không lộ ra trước khi ván kết thúc dù biết số.
+- **Số thứ tự từ khóa:** số `#N` hiện ở góc trên bên trái, là số của từ khóa đang chơi (xem [Bộ từ khóa](#bộ-từ-khóa)). Bấm vào đó mở hộp thoại chọn số **trong khoảng của độ khó đang chọn** (Thường: 1–16.866, Khó: 1–33.954, Rất khó: 1–36.110; xem [Mức từ và độ khó](#mức-từ-và-độ-khó)): nhập số rồi bấm **Bắt đầu** thì bỏ ván hiện tại và bắt đầu ván mới với đúng từ khóa đó; cùng số thì luôn ra cùng từ khóa, ở mọi độ khó. Dùng được cả khi ván đã kết thúc. Server từ chối số ngoài khoảng của độ khó (`keyword_not_found`) hoặc không phải số nguyên (`bad_request`). Từ khóa không lộ ra trước khi ván kết thúc dù biết số.
   - **Link `/solo?id=300`**: mở đường dẫn này để bắt đầu ván mới với từ khóa số 300 (gửi cho người khác được). Trang chuyển hướng sang `GET /api/games/start?id=300` (tạo ván và ghi cookie) rồi về `/solo`, nên URL cuối không còn `?id=` và tải lại trang vẫn chơi tiếp đúng ván đó, kể cả khi chưa đoán lượt nào. Mỗi lần mở link là một ván mới (bỏ ván đang chơi). `id` không phải số nguyên dương hoặc không có từ khóa số đó thì bị bỏ qua: không tạo ván, vào `/solo` như bình thường. `?tu=` (REVIEW_MODE) được ưu tiên hơn `?id=`. Từ v1.3.0 link cũ dạng `/?id=N` không còn tác dụng (chỉ mở trang chủ).
 - **New game:** nút dưới bảng chữ cái, chỉ hiện khi đang chơi. Bỏ từ khóa hiện tại (không tính thắng/thua) và bắt đầu ngay ván mới với từ khóa mới; ván bỏ dở được dọn tự động như ván cũ. Không hỏi xác nhận.
 - **Hint:** nút cạnh New game, hiện số lần còn lại (`Hint (3)`). Mỗi ván được gợi ý tối đa **3 lần**, không mất lượt đoán. Server chọn ngẫu nhiên một ô chưa từng được tô xanh lá ở lượt nào và chưa được gợi ý; chữ đúng của ô đó hiện mờ (viền đứt) ở hàng đang gõ, trong ô người chơi chưa gõ chữ, và vẫn hiện ở các lượt sau. Gợi ý lưu ở server nên tải lại trang vẫn giữ; ván mới (New game / Chơi lại) có lại 3 lần. Đổi số lần ở `maxHints` trong `src/lib/server/config.ts`. **Hiện đang tạm ẩn** nút và dòng giải thích trong luật chơi bằng CSS (`.hint-feature` trong `globals.css`; xoá rule đó và bỏ `test.skip` ở hai test Hint trong `e2e/` để hiện lại); API `POST /api/games/:id/hints` vẫn hoạt động.
@@ -171,6 +205,7 @@ Chế độ đấu nhiều người (mô tả đầy đủ, các quyết định
 **Quy tắc** (hằng số ở `src/lib/versus/config.ts`):
 - **Sức chứa:** Sảnh chờ nhận tối đa 10 người khi *vào* room; Bàn chơi có 6 ô và người ngồi bàn không tính vào 10 (người từ bàn quay về sảnh luôn được nhận). Bấm ô trống để ngồi, bấm tên mình để đứng dậy.
 - **Start:** bật khi có từ 2 người ở bàn, ai ở bàn cũng bấm được. Đếm ngược 5 giây ngay trên nút (`Start after 5s`…); **mọi thay đổi số người ở bàn** (ngồi, đứng, rời, mất kết nối) huỷ ngay, phải bấm lại. Hết 5 giây thì khoá bàn, chọn từ khóa ngẫu nhiên và đưa những người ở bàn sang màn Versus.
+- **Độ khó:** ván dùng độ khó (menu ☰) của **người bấm Start**. Dưới nút Start ghi độ khó sẽ dùng nếu mình bấm; lúc đếm ngược và đang đấu thì cả phòng thấy độ khó của ván (`Độ khó ván này: Khó`). Trong ván, menu khóa độ khó và hiện độ khó của ván.
 - **Trong ván:** mỗi người đoán riêng (luật như Chơi đơn, không Hint/New game/`#N`); đối thủ chỉ thấy tên + số lượt (`lượt 3/6`), không thấy chữ/màu. Có đồng hồ **thời gian còn lại** của ván (`Lượt 2/6 · còn 9:41`, đổi màu ở phút cuối).
 - **Từ đoán phải hợp lệ (không đòi có nghĩa):** chỉ ở đấu theo nhóm. Mọi âm tiết của từ đoán phải đúng cấu trúc tiếng Việt (phụ âm đầu + vần + thanh, bắt buộc đúng chính tả `c/k`, `g/gh`, `ng/ngh`) hoặc có trong từ điển; nếu không báo "Từ này không hợp lệ" (chung chung, không nêu âm tiết sai) và không mất lượt. Để không ai nhập chuỗi như `aê yiư`, `chiơ` chỉ nhằm loại trừ chữ cái; `tượi` (không có trong từ điển) vẫn hợp lệ. Từ khóa luôn được chấp nhận. Hạn chế: âm tiết đúng cấu trúc ghép vô nghĩa (vd `ba bư`) vẫn qua. Tắt khẩn cấp: `VERSUS.validateGuessWords = false` ở `src/lib/versus/config.ts`.
 - **Kết thúc ván** khi có người đoán đúng, hoặc không còn ai đang đoán (mọi người hết 6 lượt hoặc đã rời), hoặc quá 10 phút. Người rời giữa ván bị loại (nút Rời phòng: ngay; mất kết nối: chờ 30 giây nối lại, tải lại trang không mất ván); người còn lại đoán tiếp, kể cả chỉ còn một người.
@@ -189,7 +224,7 @@ Chế độ đấu nhiều người (mô tả đầy đủ, các quyết định
 - `worker/index.ts` là `main` của Worker (`wrangler.jsonc`): chuyển WebSocket `GET /ws/rooms/:id` vào Durable Object của room (chỉ nhận `Origin` cùng host), trả `GET /api/rooms` (danh sách room, nhớ 2 giây), mọi request khác giao cho OpenNext như trước.
 - `worker/room-do.ts` (`RoomDO`, nền SQLite, WebSocket hibernation) là vỏ mỏng: chuyển tin nhắn thành lời gọi `RoomMachine`, lưu trạng thái, đặt alarm cho các mốc thời gian (đếm ngược, khoá phòng, hết giờ, hết hạn nối lại), gửi cho **mỗi người đúng phần họ được thấy**, giới hạn tần suất tin nhắn. Mọi sự kiện đi qua một DO nên được xử lý tuần tự (không có tranh chấp "ai đoán đúng trước").
 - `src/lib/versus/room.ts` (`RoomMachine`) là toàn bộ luật của phòng, hàm thuần nhận `now` từ ngoài nên test bằng đồng hồ giả (`tests/versus-room.test.ts`). `protocol.ts`: tin nhắn client↔server và `RoomView`, **không bao giờ chứa đáp án hay chữ của lượt đoán người khác** trước khi ván kết thúc (có test kiểm tra). `config.ts`: hằng số.
-- Chọn từ khóa và lấy giải nghĩa: `worker/keyword.ts` gọi hàm SQL `pick_keyword()` và đọc bảng `words` qua REST bằng `SUPABASE_SECRET_KEY` (secret của Worker). Chấm lượt đoán dùng chung `src/lib/game/guess.ts` với Chơi đơn.
+- Chọn từ khóa và lấy giải nghĩa: `worker/keyword.ts` gọi hàm SQL `pick_keyword(difficulty)` (độ khó đi theo lệnh `start`, lưu trong trạng thái phòng) và đọc bảng `words` qua REST bằng `SUPABASE_SECRET_KEY` (secret của Worker). Chấm lượt đoán dùng chung `src/lib/game/guess.ts` với Chơi đơn.
 - Kiểm tra từ đoán: `src/lib/versus/syllable.ts` (danh sách vần, phụ âm đầu, quy tắc chính tả/thanh điệu) cộng `data/syllables.txt` (~250 âm tiết ngoại lệ của từ điển như `gen`, `ku`, sinh bằng `npm run syllables`). Cả hai được đóng gói vào Worker, nên mỗi lượt đoán không gọi Supabase. Chạy lại `npm run syllables` khi từ điển nguồn, kiểu dấu hoặc quy tắc đổi.
 - Trình duyệt: `src/components/versus/RoomProvider.tsx` (đặt ở `app/rooms/[id]/layout.tsx`) giữ **một** WebSocket cho cả `/rooms/[id]` và `/rooms/[id]/versus` nên chuyển trang không đứt kết nối; tự nối lại khi mất mạng. Rời khỏi trang phòng = đóng kết nối = rời phòng.
 - Chat: lịch sử nằm trong trạng thái phòng của Durable Object (`RoomMachine.chat()`), gửi bằng tin riêng (`chat`, và `chat_history` lúc vào phòng) chứ không gửi lại cả trạng thái phòng. Người nhận biết tin của mình qua cờ `mine` do server tính; `playerId` không bao giờ được gửi xuống client. Khung chat (`RoomChat.tsx`) nằm trong `RoomShell.tsx` ở layout của phòng nên không bị dựng lại khi chuyển trang.
@@ -214,7 +249,7 @@ src/
     api/games/[id]/guesses/route.ts  POST: gửi lượt đoán — server kiểm tra, chấm màu, lưu
     api/games/[id]/hints/route.ts    POST: nút Hint — server chọn ngẫu nhiên một ô chưa xanh lá, lưu
     rooms/                           Đấu theo nhóm: page.tsx (Room List), [id]/layout.tsx (hỏi tên nếu chưa có, giữ WebSocket), [id]/page.tsx (Inside Room), [id]/versus/page.tsx
-  components/                        Giao diện (GameScreen là Client Component duy nhất có state; KeywordDialog: chọn từ khóa theo số; ThemeSwitch: nút giao diện sáng/tối)
+  components/                        Giao diện (GameScreen là Client Component duy nhất có state; KeywordDialog: chọn từ khóa theo số; SettingsMenu: menu ☰ giao diện + độ khó; ThemeSwitch: nút giao diện sáng/tối)
   lib/
     game/                            Lõi game thuần TypeScript, dùng chung server và client
       vietnamese.ts                  Chữ cái, dấu thanh, chuẩn hoá, đặt dấu
@@ -222,6 +257,7 @@ src/
       hints.ts                       Ô nào được phép gợi ý (nút Hint)
       input.ts                       Vẽ ô từ chữ trong ô nhập
       guess.ts                       Kiểm tra + chấm một lượt đoán (dùng chung Chơi đơn và đấu theo nhóm)
+      difficulty.ts                  Độ khó (Thường/Khó/Rất khó), tên cookie, đọc giá trị
       types.ts                       Kiểu dữ liệu trao đổi với API
     server/                          Chỉ chạy ở server (import 'server-only')
       config.ts                      Biến môi trường
@@ -229,7 +265,7 @@ src/
       supabase-repository.ts         Bản dùng Supabase (secret key)
       games.ts                       Tạo ván, kiểm tra và chấm lượt đoán
       http.ts                        Cookie, JSON, lỗi
-  lib/client/                        api.ts: gọi API; player.ts: playerId + tên trong localStorage (useSavedName tự cập nhật khi đổi tên); clipboard.ts (chữ, ảnh); boardImage.ts (vẽ ảnh ô chữ); recentEmoji.ts (emoji dùng gần đây); theme.ts (giao diện sáng/tối; lib/themeScript.ts: script đặt màu trong <head>)
+  lib/client/                        api.ts: gọi API; player.ts: playerId + tên trong localStorage (useSavedName tự cập nhật khi đổi tên); clipboard.ts (chữ, ảnh); boardImage.ts (vẽ ảnh ô chữ); recentEmoji.ts (emoji dùng gần đây); theme.ts (giao diện sáng/tối; lib/themeScript.ts: script đặt màu trong <head>); difficulty.ts (độ khó đã chọn, trong cookie)
   lib/versus/                        Đấu theo nhóm: room.ts (máy trạng thái), protocol.ts, config.ts, syllable.ts (kiểm tra từ đoán), names.ts (tên gợi ý), summary.ts (câu kết quả, đồng hồ), emoji.ts + emoji-data.ts (emoji voz trong chat) — dùng chung worker và giao diện
   components/HomeScreen.tsx          Trang chủ: hai ô vuông, hỏi tên trước khi vào đấu theo nhóm
   components/versus/                 RoomProvider, RoomListScreen, InsideRoomScreen, VersusScreen, ResultDialog, NameDialog (nhập tên, tên gợi ý), NameGate (hỏi tên tại chỗ), ScreenshotButton (chụp ảnh ô chữ), RoomShell + RoomChat + ChatComposer + EmojiImage (chat của phòng, emoji voz)
@@ -237,11 +273,14 @@ src/
 public/emoji/voz/                    Emoji voz (bộ "popopo" của voz.vn) cho chat của phòng: 54 PNG 48px + bản 96px (*_x2.png)
 worker/                              Worker Cloudflare tùy biến: index.ts (định tuyến), room-do.ts (Durable Object), keyword.ts
 supabase/migrations/                 Schema (bảng words, games; hàm pick_keyword, renumber_keywords)
-data/keywords.json                   Bộ từ khóa (36.362 từ) + từ bị loại và lý do; sinh bằng npm run keywords
+data/keywords.json                   Bộ từ khóa (36.110 từ) + từ bị loại và lý do; sinh bằng npm run keywords
+data/keyword-tiers.json              Mức (1–3) của từng từ, cho độ khó; sinh bằng scripts/vocab-review/merge.ts
+data/word-blocklist.txt              Danh sách xóa: từ thô tục… bị xóa khỏi bảng words (sửa tay)
 data/syllables.txt                   Âm tiết ngoại lệ của từ điển (~250) để kiểm tra từ đoán ở đấu theo nhóm; sinh bằng npm run syllables
 data/keyword-exclusions.json         Danh sách loại trừ (từ phụ trợ, danh từ riêng, exclude/keep): cấu hình được
 data/keyword-auxiliary-candidates.txt Từ có nghĩa X của Wiktionary, để cân nhắc loại sau (sinh ra)
-scripts/                             db-migrate, seed-supabase, export-keywords, export-syllables, keyword-exclusions, dictionary-source
+scripts/                             db-migrate, seed-supabase, export-keywords, export-syllables, keyword-exclusions, word-blocklist, dictionary-source;
+                                     vocab-review/ (rà soát kho từ vựng bằng AI: prepare, merge, rubric, overrides)
 tests/                               Vitest (tests/memory-repository.ts: dữ liệu giả cho test)
 e2e/, playwright.config.ts           Test E2E (Playwright; versus.spec.ts: nhiều trình duyệt cùng vào một room)
 wrangler.jsonc, open-next.config.ts  Cấu hình Cloudflare Workers
@@ -276,6 +315,9 @@ npm version 1.4.0 --no-git-tag-version   # hoặc chỉ định thẳng một s�
 
 Các lệnh sửa `package.json` + `package-lock.json`; số được nhúng vào code lúc build nên phải tăng **trước** `npm run deploy`. Lịch sử bên dưới ghi các thay đổi đáng chú ý; bản vá nhỏ có thể gộp thành một dòng.
 
+- **v1.3.10**: Chơi đơn đổi được độ khó cả khi đang chơi: chọn độ khó khác trong menu thì bắt đầu ngay ván mới với từ khóa của độ khó đó.
+- **v1.3.9**: từ khóa **đánh số theo mức** (mức 1 trước, rồi mức 2, mức 3), nên mỗi độ khó là một khoảng số: Thường #1–16.866, Khó #1–33.954, Rất khó #1–36.110. Hộp thoại chọn số chỉ cho chọn trong khoảng của độ khó đang chọn; link chia sẻ mở được mọi số. Số `#N` của các từ đổi lần nữa.
+- **v1.3.8**: **menu ☰** ở góc trên bên phải mọi trang, gồm **Giao diện** (nút sáng/tối chuyển vào đây) và **Độ khó**: Thường (mặc định) / Khó / Rất khó = từ khóa mức 1 / 1+2 / 1+2+3, theo bản rà soát kho từ vựng (`data/keyword-tiers.json`). Đang chơi thì không đổi được độ khó; đấu theo nhóm dùng độ khó của người bấm Start. Xóa 270 từ thô tục khỏi CSDL (`data/word-blocklist.txt`): còn 36.110 từ khóa, số `#N` được đánh lại.
 - **v1.3.7**: chat trên điện thoại: chạm ra ngoài khung chat thì đóng (lần chạm đó không bấm xuống nút bên dưới).
 - **v1.3.6**: nút **giao diện sáng/tối** ở thanh trên cùng mọi trang (nhớ lựa chọn, không nháy màu khi tải trang). Emoji trong chat đổi sang bộ **popopo của voz.vn** (PNG, có bản 96px), vì bộ "Off" (GIF) bị viền răng cưa trên điện thoại.
 - **v1.3.5**: chat trên laptop là **sidebar thu gọn được**: nút `»` cạnh chữ `Chat` trượt sidebar sang phải (chuyển động mượt), còn dải hẹp có nút mở lại (chấm đỏ khi có tin mới); nhớ trạng thái cho lần sau.

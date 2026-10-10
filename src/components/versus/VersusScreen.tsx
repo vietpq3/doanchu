@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { difficultyName } from '@/lib/game/difficulty';
 import { textCells } from '@/lib/game/input';
 import { letterStatuses } from '@/lib/game/scoring';
 import { VERSUS } from '@/lib/versus/config';
@@ -100,7 +101,11 @@ export default function VersusScreen() {
   }
 
   // Rời phòng giữa ván: bị loại ngay (không chờ 30 giây nối lại như khi mất kết nối).
-  const header = <VersusHeader title={view?.roomName ?? `Room #${roomId}`} backHref="/rooms" backLabel="Rời phòng" onBack={leave} />;
+  // Đang đấu: menu không đổi được độ khó, hiện độ khó của ván.
+  const menu = game && !game.result
+    ? { locked: { difficulty: game.difficulty }, note: 'Đang đấu: độ khó do người bấm Start chọn.' }
+    : undefined;
+  const header = <VersusHeader title={view?.roomName ?? `Room #${roomId}`} backHref="/rooms" backLabel="Rời phòng" onBack={leave} menu={menu} />;
 
   if (status === 'rejected' || status === 'replaced') {
     return (
@@ -136,7 +141,7 @@ export default function VersusScreen() {
         <p className="meta">
           <span>Từ khóa: <b>{game.structure.length} âm tiết · {totalLetters} chữ cái</b></span>
           <span>
-            Lượt <b>{Math.min(rowCount + 1, game.maxTurns)}/{game.maxTurns}</b>
+            <b>{difficultyName(game.difficulty)}</b> · Lượt <b>{Math.min(rowCount + 1, game.maxTurns)}/{game.maxTurns}</b>
             {matchLeft !== null && (
               <>
                 {' · '}

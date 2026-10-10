@@ -1,0 +1,275 @@
+# Từ bị xóa hẳn khỏi CSDL (bảng words): thô tục, tục tĩu, chửi rủa, xúc phạm, tình dục, mại dâm — không hợp với game công khai.
+# npm run keywords bỏ các từ này khỏi bộ từ khóa; npm run db:seed không nạp và xóa chúng khỏi bảng words trên Supabase.
+# Nguồn: nhóm "Thô tục, nhạy cảm" của bản rà soát kho từ vựng (scripts/vocab-review), đã duyệt tay; các từ thường bị xếp nhầm
+# vào nhóm đó (vd "đê mạt", "chửi bới", "ngoại tình") được giữ lại, xem scripts/vocab-review/overrides.tsv.
+# Mỗi dòng một từ; dòng bắt đầu bằng # là chú thích. Kiểu dấu không quan trọng (script chuẩn hóa lại).
+ái nam ái nữ
+ảo dâm
+ăn lắm ỉa nhiều
+ăn nằm
+ăn sương
+âm hạch
+âm hộ
+âm mao
+âm vật
+ấn đụ
+ấu dâm
+bá ngọ
+bán dâm
+bán hoa
+bao cao su
+bê đê
+bệnh kín
+bíu bìu
+bìu dái
+bỏ bà
+bỏ bố
+bỏ cha
+bỏ mẹ
+bỏ xừ
+bóp vú
+bố cu mẹ đĩ
+bợ đít
+bú cặc
+bú cu
+bú dù
+ca pốt
+cặc bần
+cần tăng dân số
+cấu hiệp
+cấu hợp
+cậu nhỏ
+cha đời
+chàng hảng
+chém cha
+chết giẫm
+chết rấp
+chết tiệt
+chim cửng
+chịu đực
+chó chết
+chó đẻ
+chó đểu
+chó điên
+chó má
+chỗ kín
+chủ chứa
+chung chăn gối
+chuyện ấy
+chửa buộm
+chửi lồn
+con điếm
+con heo
+con mẹ
+con phạch
+còn trinh
+côn an
+cú có gai
+của quý
+cuồng dâm
+cửa mình
+cương cứng
+cưỡng dâm
+cường dương
+cưỡng hiếp
+cứt đái
+cứt gián
+cứt ráy
+cứt sắt
+cứt su
+cứt trâu
+dắt gái
+dâm dật
+dâm dục
+dâm đãng
+dâm loạn
+dâm ô
+dâm phụ
+dâm thư
+dê cụ
+dê sồm
+dục tình
+dục tính
+dương vật
+đa dâm
+đái bậy
+đánh đĩ
+đánh rắm
+đạp mái
+đau trời váng
+đặc cầu
+đậu xanh rau má
+đẻ đái
+đĩ bợm
+đĩ điếm
+đi khách
+đĩ rạc
+đi rửa
+đĩ thõa
+đĩ tính
+điếm đàng
+địt mẹ
+đồ đê tiện
+đồ hèn hạ
+đổ thùng
+động cỡn
+động đĩ
+đụ má
+đù mẹ
+đụ mẹ
+éo biết
+gà móng đỏ
+gái bán hoa
+gái bao
+gái đĩ
+gái điếm
+gái giang hồ
+gái gọi
+gái mại dâm
+gái ngành
+gái nhảy
+gái tân
+gian dâm
+gian phụ
+giao cấu
+giao hợp
+giao vĩ
+gợi tình
+hạ nang
+hãm hiếp
+hành viện
+hiếp dâm
+hoa mại nương
+hoa nương
+hoang dâm
+hoang thai
+hòn dái
+hổng đít
+hứng tình
+ỉa đái
+ỉa đùn
+ỉa són
+ỉa vãi
+khỉ già
+khiêu dâm
+khốn kiếp
+kích dục
+la hán đẩy xe bò
+lại cái
+làm đĩ
+làm gái
+làm tình
+làng chơi
+lạnh dạ
+lãnh dục
+lăn cổ
+lên đỉnh
+lếu lều
+liệt dương
+loạn dâm
+loạn luân
+lót tích
+lỗ đít
+lộ hàng
+lỗ lồn
+lồn lột
+ma cô
+má mày
+má mì
+má nó
+mại dâm
+mại dâm cao cấp
+man di
+màng trinh
+máu dê
+máy đẻ
+mặt mẹt
+mặt mo
+mặt nạc đóm dày
+mất giống
+mẹ dàu
+mẹ đĩ
+mẹ kiếp
+mẹ mốc
+mẹ ranh
+mọi rợ
+mồ cha
+mộng tinh
+mụ nội
+mua dâm
+mưa mây
+nạo thai
+ngẩu pín
+ngọc hành
+ngu vãi
+nguội điện
+nhà chứa
+nhà săm
+nhà thổ
+nhảy lưng
+nhũ hoa
+nhục cảm
+nhục dục
+nước đái
+oản bụt
+óc heo
+ôn con
+ôn vật
+phá đò
+phá thai
+phá trinh
+phải gái
+phịch nhau
+phim con heo
+phim khiêu dâm
+phim sex
+phường hoa
+quạ cái
+quạ mổ
+quy đầu
+quỷ tha ma bắt
+rảnh chuối
+rắm rít
+roi cặc bò
+rủn tỉ
+sắc dục
+sinh thực khí
+sờm sỡ
+sục cặc
+sục cu
+tà dâm
+thằng nhà quê
+thẩm du
+thấy mẹ
+thấy tháng
+thoát y
+thoát y vũ
+thỗn thện
+thông dâm
+thủ dâm
+thúi địt
+ti bầu
+tiên nhân
+tiên sư
+tiên sư cha
+tinh dịch
+tình dục
+tính dục
+tính giao
+to bụng
+tòm tem
+tổ cha
+trai bao
+tráng dương
+trâu chó
+trẹo họng
+trùng địt
+vãi linh hồn
+vãi lồn
+vú mướp
+vú vê
+vùng kín
+xăng pha nhớt
+xóc lọ
+xuất tinh
+xục cặc

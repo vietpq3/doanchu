@@ -1,12 +1,19 @@
 import Link from 'next/link';
-import type { ReactNode } from 'react';
-import ThemeSwitch from '../ThemeSwitch';
+import type { ComponentProps, ReactNode } from 'react';
+import SettingsMenu from '../SettingsMenu';
 
 /**
  * Thanh trên của các trang đấu theo nhóm: nút quay lại bên trái (liên kết, hoặc nút nếu có `onBack`), tên trang ở giữa, bên phải là `right`
- * (nếu có) và nút chọn giao diện sáng/tối.
+ * (nếu có) và menu (giao diện, độ khó; `menu` là props của SettingsMenu).
  */
-export default function VersusHeader({ title, backHref, backLabel, right, onBack }: { title: string; backHref: string; backLabel: string; right?: ReactNode; onBack?: () => void }) {
+export default function VersusHeader({ title, backHref, backLabel, right, onBack, menu }: {
+  title: string;
+  backHref: string;
+  backLabel: string;
+  right?: ReactNode;
+  onBack?: () => void;
+  menu?: ComponentProps<typeof SettingsMenu>;
+}) {
   const arrow = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>;
   return (
     <header className="topbar">
@@ -20,7 +27,7 @@ export default function VersusHeader({ title, backHref, backLabel, right, onBack
         <h1 className="brand">{title}</h1>
         <span className="topbar-right">
           {right}
-          <ThemeSwitch />
+          <SettingsMenu note="Ván đấu dùng độ khó của người bấm Start." {...menu} />
         </span>
       </div>
     </header>
