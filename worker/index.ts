@@ -1,5 +1,6 @@
 import openNext from '../.open-next/worker.js';
-import { VERSUS } from '../src/lib/versus/config';
+import { isChatImageId } from '../src/lib/versus/chatImage';
+import { isRoomId, VERSUS } from '../src/lib/versus/config';
 import type { RoomSummary } from '../src/lib/versus/room';
 import type { RoomEnv } from './room-do';
 
@@ -22,9 +23,34 @@ async function roomList(env: RoomEnv): Promise<Response> {
   return Response.json({ rooms: roomsCache.rooms }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
+/** Request từ chính trang của mình (trang khác không được mở kết nối hay gửi ảnh vào phòng). */
+const sameOrigin = (request: Request, url: URL) => {
+  const origin = request.headers.get('Origin');
+  return !origin || new URL(origin).host === url.host;
+};
+
+/**
+ * Ảnh trong chat của phòng (lưu trong Durable Object của phòng). Trả đúng loại ảnh đã nhận dạng lúc gửi; `nosniff` + CSP `sandbox`
+ * để trình duyệt không bao giờ chạy nó như một trang. Id ảnh là UUID ngẫu nhiên; ảnh bị xóa khi ra khỏi lịch sử chat.
+ */
+async function chatImage(env: RoomEnv, roomId: number, id: string): Promise<Response> {
+  const image = await stubOf(env, roomId).chatImage(id);
+  if (!image) return new Response('Ảnh không còn', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  return new Response(image.data, {
+    headers: {
+      'Content-Type': image.type,
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      'Content-Disposition': 'inline',
+    },
+  });
+}
+
 /**
  * Worker tùy biến: WebSocket của phòng đấu theo nhóm đi thẳng vào Durable Object của phòng đó, GET /api/rooms trả danh
- * sách room; mọi request khác do OpenNext (Next.js) xử lý như trước.
+ * sách room, ảnh trong chat (POST gửi ảnh, GET tải ảnh) đi vào Durable Object của phòng; mọi request khác do OpenNext (Next.js)
+ * xử lý như trước.
  */
 const worker = {
   async fetch(request: Request, env: RoomEnv, ctx: ExecutionContext): Promise<Response> {
@@ -34,13 +60,24 @@ const worker = {
     if (ws) {
       const roomId = Number(ws[1]);
       if (roomId < 1 || roomId > VERSUS.roomCount) return new Response('Room không tồn tại', { status: 404 });
-      // Chỉ nhận WebSocket từ chính trang của mình (trang khác không được mở kết nối vào phòng).
-      const origin = request.headers.get('Origin');
-      if (origin && new URL(origin).host !== url.host) return new Response('Forbidden', { status: 403 });
+      if (!sameOrigin(request, url)) return new Response('Forbidden', { status: 403 });
       return stubOf(env, roomId).fetch(request);
     }
 
     if (url.pathname === '/api/rooms' && request.method === 'GET') return roomList(env);
+
+    const image = /^\/api\/rooms\/(\d+)\/chat-images(?:\/([^/]+))?$/.exec(url.pathname);
+    if (image) {
+      const roomId = Number(image[1]);
+      if (!isRoomId(roomId)) return new Response('Room không tồn tại', { status: 404 });
+      if (request.method === 'POST' && !image[2]) {
+        // gửi ảnh: bắt buộc có Origin của chính trang (fetch từ trang luôn gửi Origin với POST)
+        if (!request.headers.get('Origin') || !sameOrigin(request, url)) return new Response('Forbidden', { status: 403 });
+        return stubOf(env, roomId).fetch(request);
+      }
+      if (request.method === 'GET' && image[2]) return isChatImageId(image[2]) ? chatImage(env, roomId, image[2]) : new Response('Not found', { status: 404 });
+      return new Response('Method not allowed', { status: 405 });
+    }
 
     return openNext.fetch(request, env, ctx);
   },

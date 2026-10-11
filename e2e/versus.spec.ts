@@ -13,6 +13,21 @@ const NAME_KEY = 'doanchu-player-name';
 
 const uid = () => Math.random().toString(36).slice(2, 6);
 
+/** Một ảnh PNG `width` x `height` một màu, vẽ bằng canvas trong trang; trả về các byte (để chọn file) hoặc ghi vào clipboard. */
+async function makePng(page: Page, width: number, height: number, toClipboard = false): Promise<number[]> {
+  return page.evaluate(async ([w, h, clip]) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#3c8c55';
+    ctx.fillRect(0, 0, w, h);
+    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'));
+    if (clip) await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  }, [width, height, toClipboard] as const);
+}
+
 /** Một người chơi: trình duyệt riêng (localStorage riêng => playerId riêng), cỡ màn hình điện thoại. */
 class Player {
   readonly errors: string[] = [];
@@ -410,6 +425,22 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   expect(image.types).toContain('image/png');
   expect(image.width).toBe(1120); // 560px x2
   expect(image.height).toBeGreaterThan(600);
+  // dán ảnh vừa chụp vào chat (nút dán): mọi người trong phòng thấy ảnh ô chữ
+  await b.chatBubble.click();
+  await b.page.getByRole('button', { name: 'Dán từ clipboard' }).click();
+  await expect(b.page.locator('.chat-attachment img')).toBeVisible();
+  await b.page.getByRole('button', { name: 'Gửi', exact: true }).click();
+  await expect(b.page.locator('.chat-attachment')).toHaveCount(0);
+  await c.chatBubble.click();
+  // ảnh lớn: hiện thu nhỏ vừa khung (chừa chỗ sẵn, giữ tỉ lệ), dữ liệu ảnh vẫn là bản chụp đầy đủ
+  const shot = c.page.locator('.chat-image img').last();
+  await expect(shot).toBeVisible();
+  await expect.poll(() => shot.evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight])).toEqual([image.width, image.height]);
+  const shown = (await shot.boundingBox())!;
+  expect(shown.height).toBeLessThanOrEqual(240.5);
+  expect(Math.abs(shown.width / shown.height - image.width / image.height)).toBeLessThan(0.02);
+  await c.chatBubble.click();
+  await b.chatBubble.click();
 
   // Về phòng (hoặc hết 10s): về Inside Room, mọi người về Sảnh chờ, Bàn chơi trống, kết quả lượt trước ở cạnh bàn
   await b.reviewBar.getByRole('button', { name: /^Về phòng \(\d+s\)$/ }).click();
@@ -542,7 +573,7 @@ test('chat: laptop có khung chat bên cạnh, điện thoại có bubble (chấ
   await expect(b.page.locator('#chat-input')).toHaveValue(':boss: ');
   await expect(b.page.locator('#chat-emoji-picker')).toBeVisible();
   await expect(b.page.locator('.emoji-picker-title', { hasText: 'Dùng gần đây' })).toBeVisible();
-  await b.page.getByRole('button', { name: 'Gửi' }).click();
+  await b.page.getByRole('button', { name: 'Gửi', exact: true }).click();
   await expect(a.page.locator('.chat-text.emoji-only img[alt=":boss:"]')).toBeVisible();
   // điện thoại: chạm vào một gợi ý để chèn (trên điện thoại không có Tab, và Enter khi mới gõ 1 chữ là gửi tin)
   const bInput = b.page.locator('#chat-input');
@@ -550,6 +581,41 @@ test('chat: laptop có khung chat bên cạnh, điện thoại có bubble (chấ
   await bInput.pressSequentially(':bea');
   await b.page.locator('#chat-emoji-suggest [role="option"]').first().tap();
   await expect(bInput).toHaveValue(':beauty: ');
+  await bInput.fill('');
+
+  // ảnh từ máy (laptop): nút "Gửi ảnh từ máy" mở hộp chọn file → xem trước → Gửi kèm chú thích → người khác thấy ảnh đúng kích thước
+  const [chooser] = await Promise.all([a.page.waitForEvent('filechooser'), a.page.getByRole('button', { name: 'Gửi ảnh từ máy' }).click()]);
+  await chooser.setFiles({ name: 'anh.png', mimeType: 'image/png', buffer: Buffer.from(await makePng(a.page, 120, 80)) });
+  await expect(a.page.locator('.chat-attachment img')).toBeVisible();
+  await expect(a.page.locator('.chat-attachment')).toContainText('Ảnh ·');
+  const caption = `Ảnh đây ${uid()}`;
+  await input.fill(caption);
+  await input.press('Enter');
+  await expect(a.page.locator('.chat-attachment')).toHaveCount(0);
+  await expect(input).toHaveValue('');
+  const sentImage = b.chatMessage(caption).locator('.chat-image img');
+  await expect(sentImage).toHaveAttribute('width', '120'); // ảnh nhỏ: hiện đúng cỡ
+  await expect.poll(() => sentImage.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(120);
+  const imageResponse = await b.page.request.get((await sentImage.getAttribute('src'))!);
+  expect([imageResponse.status(), imageResponse.headers()['content-type'], imageResponse.headers()['x-content-type-options']]).toEqual([200, 'image/png', 'nosniff']);
+  // file không phải ảnh: báo lỗi trong khung chat, không gửi gì
+  const [chooser2] = await Promise.all([a.page.waitForEvent('filechooser'), a.page.getByRole('button', { name: 'Gửi ảnh từ máy' }).click()]);
+  await chooser2.setFiles({ name: 'khong-phai-anh.png', mimeType: 'image/png', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>') });
+  await expect(a.page.locator('.chat-error')).toContainText('Không đọc được ảnh này');
+  await expect(a.page.locator('.chat-attachment')).toHaveCount(0);
+
+  // nút dán (điện thoại): clipboard có ảnh thì thành ảnh chờ gửi; có chữ thì chèn vào ô nhập
+  await b.page.bringToFront();
+  await makePng(b.page, 90, 60, true);
+  await b.page.getByRole('button', { name: 'Dán từ clipboard' }).click();
+  await expect(b.page.locator('.chat-attachment img')).toBeVisible();
+  await b.page.getByRole('button', { name: 'Gửi', exact: true }).click();
+  await expect(b.page.locator('.chat-attachment')).toHaveCount(0);
+  await expect(a.page.locator('.chat-msg:not(.mine) .chat-image img[width="90"]')).toBeVisible();
+  const clipText = `chữ dán ${uid()}`;
+  await b.page.evaluate((t) => navigator.clipboard.writeText(t), clipText);
+  await b.page.getByRole('button', { name: 'Dán từ clipboard' }).click();
+  await expect(bInput).toHaveValue(clipText);
   await bInput.fill('');
 
   // bấm bubble lần nữa thì đóng

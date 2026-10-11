@@ -3,6 +3,9 @@
 import { usePathname } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import { isEmojiOnly, parseChatText } from '@/lib/versus/emoji';
+import { uploadChatImage } from '@/lib/client/chatImage';
+import { getPlayerId } from '@/lib/client/player';
+import type { ChatMessage } from '@/lib/versus/protocol';
 import ChatComposer from './ChatComposer';
 import EmojiImage from './EmojiImage';
 import { useRoom } from './RoomProvider';
@@ -67,6 +70,29 @@ function MessageText({ text }: { text: string }) {
   );
 }
 
+/** Ảnh trong tin chat hiện vừa trong khung này (px), giữ tỉ lệ */
+const IMAGE_BOX = { width: 220, height: 240 };
+
+/**
+ * Ảnh trong tin chat: cỡ hiển thị tính sẵn từ kích thước ảnh (vừa IMAGE_BOX, giữ tỉ lệ) nên chỗ của ảnh có ngay từ đầu: khung chat
+ * cuộn xuống cuối đúng chỗ và không giật khi ảnh tải xong. Bấm để mở ảnh đầy đủ ở tab mới.
+ */
+function MessageImage({ image }: { image: NonNullable<ChatMessage['image']> }) {
+  const scale = Math.min(1, IMAGE_BOX.width / image.width, IMAGE_BOX.height / image.height);
+  return (
+    <a className="chat-image" href={image.url} target="_blank" rel="noopener noreferrer" aria-label="Ảnh (mở ở tab mới)">
+      {/* eslint-disable-next-line @next/next/no-img-element -- ảnh người chơi gửi, phục vụ thẳng từ Durable Object của phòng */}
+      <img
+        src={image.url}
+        width={Math.max(1, Math.round(image.width * scale))}
+        height={Math.max(1, Math.round(image.height * scale))}
+        alt="Ảnh"
+        loading="lazy"
+      />
+    </a>
+  );
+}
+
 /**
  * Chat của phòng, dùng chung cho Inside Room (Sảnh chờ) và màn đấu: mọi người trong phòng (ở sảnh, ở bàn, đang đấu) cùng một kênh.
  * - Laptop: khung chat là sidebar bên phải; nút cạnh chữ "Chat" thu gọn nó (trượt sang phải, chỉ còn một dải hẹp có nút mở lại, nút có
@@ -78,7 +104,7 @@ function MessageText({ text }: { text: string }) {
  * Có emoji voz: bảng chọn và gợi ý khi gõ `:x` ở ChatComposer, mã emoji trong tin hiện thành ảnh (src/lib/versus/emoji.ts).
  */
 export default function RoomChat() {
-  const { view, status, chat, chatError, send, onChatMessage } = useRoom();
+  const { roomId, view, status, chat, chatError, send, onChatMessage } = useRoom();
   const side = useSideLayout();
   const pathname = usePathname();
   // bubble: khung chat mở ở trang nào thì chỉ mở ở trang đó
@@ -226,7 +252,8 @@ export default function RoomChat() {
                     <time dateTime={new Date(m.at).toISOString()}>{timeFormat.format(m.at)}</time>
                   </span>
                 )}
-                <MessageText text={m.text} />
+                {m.image && <MessageImage image={m.image} />}
+                {m.text && <MessageText text={m.text} />}
               </li>
             );
           })}
@@ -235,6 +262,7 @@ export default function RoomChat() {
           inputRef={inputRef}
           connected={connected}
           onSend={(text) => send({ type: 'chat', text })}
+          onSendImage={(image, text) => uploadChatImage(roomId, getPlayerId(), image, text)}
           serverError={error}
           pickerOpen={pickerOpen}
           setPickerOpen={setPickerOpen}

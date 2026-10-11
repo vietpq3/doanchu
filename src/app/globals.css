@@ -450,7 +450,7 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8
 .chat-msg.mine .chat-text { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 35%, var(--surface)); }
 .chat-empty { margin: auto 0; padding: 0 12px; text-align: center; font-size: .88rem; color: var(--muted); }
 .chat-error { margin: 0; padding: 0 12px; font-size: .82rem; color: var(--accent); font-weight: 600; }
-.chat-form { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.chat-form { display: flex; gap: 8px; padding: 6px 12px 10px; }
 /* cỡ chữ 16px: Safari trên iPhone không tự phóng to trang khi chạm vào ô nhập */
 .chat-input {
   flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 2px solid var(--cell-filled); border-radius: 10px;
@@ -465,9 +465,24 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8
 .chat-emoji { vertical-align: middle; margin: 0 1px; }
 .chat-msg .chat-text.emoji-only { background: none; border-color: transparent; padding: 2px 0; } /* thắng cả nền của tin của mình */
 .chat-compose { position: relative; }
-.chat-emoji-btn { width: 44px; height: 44px; border-color: transparent; color: var(--muted); }
-.chat-emoji-btn:hover, .chat-emoji-btn.active { color: var(--accent); }
-.chat-emoji-btn svg { width: 24px; height: 24px; }
+/* Hàng nút nhỏ trên ô nhập: emoji, gửi ảnh, dán; ảnh chờ gửi hiện ngay bên cạnh */
+.chat-tools { display: flex; align-items: center; gap: 2px; min-height: 40px; padding: 6px 8px 0; border-top: 1px solid var(--border); }
+.chat-tool { width: 34px; height: 34px; border-color: transparent; color: var(--muted); }
+.chat-tool:hover:not(:disabled), .chat-tool.active { color: var(--accent); }
+.chat-tool:disabled { opacity: .45; cursor: default; }
+.chat-tool svg { width: 21px; height: 21px; }
+.chat-attachment {
+  min-width: 0; margin-left: 6px; display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 2px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
+}
+.chat-attachment img { flex: none; width: 32px; height: 32px; object-fit: cover; border-radius: 6px; display: block; }
+.chat-attachment-info { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; color: var(--muted); }
+.chat-tools > .chat-attachment-info { margin-left: 6px; }
+.chat-attachment-remove { flex: none; width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; font-size: .8rem; }
+.chat-attachment-remove:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+/* Ảnh trong tin: cỡ hiển thị đặt sẵn bằng width/height (RoomChat.tsx), hẹp hơn thì thu nhỏ giữ tỉ lệ */
+.chat-image { display: block; max-width: 100%; margin: 2px 0; }
+.chat-image img { display: block; max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); }
 .emoji-picker, .emoji-suggest {
   position: absolute; z-index: 2; left: 8px; right: 8px; bottom: calc(100% + 4px);
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);

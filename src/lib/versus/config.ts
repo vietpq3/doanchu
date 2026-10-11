@@ -34,6 +34,13 @@ export const VERSUS = {
   chatMax: 200,
   chatHistory: 50,
   chatRate: { messages: 5, windowMs: 5_000 },
+  /**
+   * Ảnh trong chat: cỡ tối đa một ảnh khi gửi lên (trình duyệt tự thu nhỏ ảnh lớn hơn; ảnh lưu trong Durable Object của phòng, mỗi
+   * giá trị lưu được tối đa 2 MB), cạnh dài nhất sau khi thu nhỏ, và số ảnh tối đa mỗi người trong một khoảng thời gian.
+   */
+  chatImageMaxBytes: 1_000_000,
+  chatImageMaxSide: 1600,
+  chatImageRate: { images: 3, windowMs: 20_000 },
   /** Leader Board của phòng (số ván thắng trong ngày): reset lúc 00:00 giờ Việt Nam (UTC+7, không có giờ mùa hè) */
   leaderboardUtcOffsetMs: 7 * 60 * 60_000,
   /** Số người tối đa được nhớ trên Leader Board của một phòng (quá thì bỏ người thấp nhất) */
