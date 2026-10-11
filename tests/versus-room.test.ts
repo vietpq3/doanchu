@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { VERSUS } from '@/lib/versus/config';
-import { chatMessageFor, RoomMachine } from '@/lib/versus/room';
+import { chatImageIds, chatMessageFor, RoomMachine, type ChatImage } from '@/lib/versus/room';
 
 const T0 = 1_000_000;
 const ANSWER = 'vũ trụ'; // cấu trúc [2, 3]
@@ -684,10 +684,51 @@ describe('chat của phòng', () => {
   test('người nhận biết tin nào là của mình; tin gửi xuống không có id người gửi', () => {
     const m = twoAtTable();
     m.chat('a', 'xin chào', T0);
-    expect(m.chatHistoryFor('a')).toEqual([{ seq: 1, name: 'An', text: 'xin chào', at: T0, mine: true }]);
-    expect(m.chatHistoryFor('b')).toEqual([{ seq: 1, name: 'An', text: 'xin chào', at: T0, mine: false }]);
-    expect(chatMessageFor(m.state.chat[0], 'b')).toEqual(m.chatHistoryFor('b')[0]);
+    expect(m.chatHistoryFor('a')).toEqual([{ seq: 1, name: 'An', text: 'xin chào', image: null, at: T0, mine: true }]);
+    expect(m.chatHistoryFor('b')).toEqual([{ seq: 1, name: 'An', text: 'xin chào', image: null, at: T0, mine: false }]);
+    expect(chatMessageFor(m.state.chat[0], 'b', 1)).toEqual(m.chatHistoryFor('b')[0]);
     expect(JSON.stringify(m.chatHistoryFor('b'))).not.toContain('"a"');
+  });
+
+  describe('ảnh trong chat', () => {
+    const IMG = (n = 1): ChatImage => ({ id: `0000000${n}-aaaa-4bbb-8ccc-dddddddddddd`, type: 'image/png', width: 1120, height: 1300 });
+
+    test('tin chỉ có ảnh, hoặc ảnh kèm chữ; người nhận thấy đường dẫn ảnh của phòng và kích thước, không thấy id người gửi', () => {
+      const m = twoAtTable(create(3));
+      expect(m.chat('a', '', T0, IMG(1))).toMatchObject({ ok: true, entry: { text: '', image: IMG(1) } });
+      expect(m.chat('b', '  ảnh  đây ', T0 + 1, IMG(2)).ok).toBe(true);
+      expect(m.chatHistoryFor('b')).toEqual([
+        { seq: 1, name: 'An', text: '', image: { url: `/api/rooms/3/chat-images/${IMG(1).id}`, width: 1120, height: 1300 }, at: T0, mine: false },
+        { seq: 2, name: 'Bình', text: 'ảnh đây', image: { url: `/api/rooms/3/chat-images/${IMG(2).id}`, width: 1120, height: 1300 }, at: T0 + 1, mine: true },
+      ]);
+      expect(code(m.chat('a', '', T0 + 2))).toBe('chat_empty'); // không chữ, không ảnh
+    });
+
+    test('giới hạn số ảnh mỗi người (kiểm tra trước được, chưa ghi gì); tin chữ vẫn gửi được', () => {
+      const m = twoAtTable();
+      const { images, windowMs } = VERSUS.chatImageRate;
+      for (let i = 0; i < images; i++) expect(m.chat('a', '', T0 + i * 2000, IMG(i + 1)).ok).toBe(true);
+      const t = T0 + images * 2000;
+      expect(code(m.canChat('a', t, true))).toBe('chat_image_rate_limited');
+      expect(code(m.chat('a', '', t, IMG(9)))).toBe('chat_image_rate_limited');
+      expect(m.canChat('a', t, false)).toEqual({ ok: true });
+      expect(m.chat('a', 'chữ thì được', t).ok).toBe(true);
+      expect(m.canChat('b', t, true)).toEqual({ ok: true }); // người khác vẫn gửi ảnh được
+      expect(m.chat('a', '', T0 + windowMs, IMG(8)).ok).toBe(true); // đợi đủ lâu
+      expect(code(m.canChat('x', t, true))).toBe('unknown_player');
+    });
+
+    test('ảnh bị đẩy ra khỏi lịch sử (quá 50 tin) hoặc phòng trống thì không còn trong danh sách ảnh (Durable Object xóa dữ liệu ảnh)', () => {
+      const m = twoAtTable();
+      m.chat('a', '', T0, IMG(1));
+      m.chat('b', '', T0 + 10_000, IMG(2));
+      expect(chatImageIds(m.state.chat)).toEqual([IMG(1).id, IMG(2).id]);
+      for (let i = 0; i < VERSUS.chatHistory - 1; i++) m.chat(i % 2 ? 'a' : 'b', `tin ${i}`, T0 + 20_000 + i * 10_000);
+      expect(chatImageIds(m.state.chat)).toEqual([IMG(2).id]); // ảnh 1 là tin cũ nhất, đã bị đẩy ra
+      m.leave('a', T0 + 10_000_000);
+      m.leave('b', T0 + 10_000_000);
+      expect(chatImageIds(m.state.chat)).toEqual([]);
+    });
   });
 
   test('người không ở trong phòng thì không chat được và không có lịch sử; tin trống bị từ chối', () => {

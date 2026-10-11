@@ -4,7 +4,8 @@ import { wordInfo } from '../src/lib/game/vietnamese';
 import { isRoomId, VERSUS } from '../src/lib/versus/config';
 import { isValidPlayerId, parseClientMessage } from '../src/lib/versus/protocol';
 import type { ServerMessage } from '../src/lib/versus/protocol';
-import { chatMessageFor, RoomMachine } from '../src/lib/versus/room';
+import { parseImageSize, sniffImageType, type ChatImageType } from '../src/lib/versus/chatImage';
+import { chatImageIds, chatMessageFor, RoomMachine } from '../src/lib/versus/room';
 import { createSyllableValidator } from '../src/lib/versus/syllable';
 import type { ActionResult, ChatEntry, RoomState, RoomSummary } from '../src/lib/versus/room';
 import { fetchDefinitions, pickRandomKeyword } from './keyword';
@@ -37,6 +38,18 @@ const RATE_LIMIT = { messages: 40, windowMs: 10_000 };
 
 const errorMessage = (code: string, message: string): ServerMessage => ({ type: 'error', code, message });
 
+/** Ảnh chat lưu trong storage của Durable Object, khóa `img:<id>` (mỗi giá trị lưu được tối đa 2 MB; ảnh tối đa VERSUS.chatImageMaxBytes). */
+interface StoredImage {
+  type: ChatImageType;
+  data: ArrayBuffer;
+}
+const imageKey = (id: string) => `img:${id}`;
+/** Khóa lưu danh sách id các ảnh đang có trong storage (để xóa ảnh không còn trong lịch sử chat mà không phải đọc cả dữ liệu ảnh). */
+const IMAGE_IDS_KEY = 'imageIds';
+
+/** Kết quả của POST ảnh: JSON { ok } hoặc { code, message } (mã lỗi chat_* hiện trong khung chat). */
+const jsonResult = (status: number, body: Record<string, unknown>) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
+
 /**
  * Một phòng đấu theo nhóm. Vỏ mỏng quanh RoomMachine (src/lib/versus/room.ts): chuyển tin nhắn WebSocket thành lời gọi
  * ở đó, lưu trạng thái, đặt alarm cho các mốc thời gian (đếm ngược, khóa phòng, hết giờ, chờ nối lại) và gửi cho mỗi
@@ -46,12 +59,15 @@ const errorMessage = (code: string, message: string): ServerMessage => ({ type: 
 export class RoomDO extends DurableObject<RoomEnv> {
   private machine = RoomMachine.create(0, isValidWord);
   private recent = new Map<string, number[]>();
+  /** id các ảnh chat đang có trong storage (đọc lúc khởi động, lưu ở khóa IMAGE_IDS_KEY) */
+  private imageIds: string[] = [];
 
   constructor(ctx: DurableObjectState, env: RoomEnv) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       const saved = await ctx.storage.get<RoomState>('state');
       if (saved) this.machine = new RoomMachine(saved, isValidWord);
+      this.imageIds = (await ctx.storage.get<string[]>(IMAGE_IDS_KEY)) ?? [];
       // Sau khi DO khởi động lại, ai không còn socket thì xử lý như mất kết nối.
       const live = new Set<string>();
       for (const ws of ctx.getWebSockets()) {
@@ -67,8 +83,9 @@ export class RoomDO extends DurableObject<RoomEnv> {
   // ---------- vào phòng ----------
 
   async fetch(request: Request): Promise<Response> {
-    if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected WebSocket', { status: 426 });
     const url = new URL(request.url);
+    if (request.method === 'POST' && /^\/api\/rooms\/\d+\/chat-images$/.test(url.pathname)) return this.uploadImage(request);
+    if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected WebSocket', { status: 426 });
     const roomId = Number(/\/(\d+)$/.exec(url.pathname)?.[1]);
     const pid = url.searchParams.get('pid');
     if (!isRoomId(roomId) || !isValidPlayerId(pid)) return new Response('Bad request', { status: 400 });
@@ -96,6 +113,70 @@ export class RoomDO extends DurableObject<RoomEnv> {
       await this.process(now);
     }
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // ---------- ảnh trong chat ----------
+
+  /**
+   * POST /api/rooms/:id/chat-images (worker đã kiểm tra Origin): thân request là dữ liệu ảnh; header X-Player-Id (người gửi, phải
+   * đang ở trong phòng), X-Image-Width/X-Image-Height, X-Chat-Text (chữ kèm ảnh, đã encodeURIComponent). Ảnh được lưu rồi thành một
+   * tin chat gửi cho cả phòng như tin chữ.
+   */
+  private async uploadImage(request: Request): Promise<Response> {
+    const pid = request.headers.get('X-Player-Id');
+    const now = Date.now();
+    if (!isValidPlayerId(pid) || !this.machine.has(pid)) return jsonResult(403, { code: 'not_in_room', message: 'Bạn chưa ở trong phòng' });
+    if (!this.allow(pid, now)) return jsonResult(429, { code: 'chat_rate_limited', message: 'Bạn thao tác quá nhanh' });
+    const tooLarge = () => jsonResult(413, { code: 'chat_image_too_large', message: `Ảnh quá lớn (tối đa ${VERSUS.chatImageMaxBytes / 1_000_000} MB)` });
+    if (Number(request.headers.get('Content-Length') ?? 0) > VERSUS.chatImageMaxBytes) return tooLarge();
+    const size = parseImageSize(request.headers.get('X-Image-Width'), request.headers.get('X-Image-Height'));
+    let text = '';
+    try {
+      text = decodeURIComponent(request.headers.get('X-Chat-Text') ?? '');
+    } catch {
+      return jsonResult(400, { code: 'bad_request', message: 'Tin nhắn không hợp lệ' });
+    }
+    if (!size) return jsonResult(400, { code: 'bad_request', message: 'Ảnh không hợp lệ' });
+    const allowed = this.machine.canChat(pid, now, true);
+    if (!allowed.ok) return jsonResult(429, { code: allowed.code, message: allowed.message });
+
+    const data = await request.arrayBuffer();
+    if (data.byteLength > VERSUS.chatImageMaxBytes) return tooLarge();
+    const type = sniffImageType(new Uint8Array(data, 0, Math.min(16, data.byteLength)));
+    if (!type) return jsonResult(415, { code: 'chat_image_type', message: 'Chỉ gửi được ảnh PNG, JPEG, GIF hoặc WebP' });
+
+    const id = crypto.randomUUID();
+    this.imageIds.push(id);
+    await this.ctx.storage.put({ [imageKey(id)]: { type, data } satisfies StoredImage, [IMAGE_IDS_KEY]: this.imageIds });
+    const sent = this.machine.chat(pid, text, Date.now(), { id, type, ...size });
+    if (!sent.ok) {
+      await this.sweepImages();
+      return jsonResult(429, { code: sent.code, message: sent.message });
+    }
+    await this.saveChat(sent.entry);
+    return jsonResult(200, { ok: true });
+  }
+
+  /** Ảnh chat `id` (gọi từ worker qua RPC cho GET /api/rooms/:id/chat-images/:imageId); null nếu không còn. */
+  async chatImage(id: string): Promise<StoredImage | null> {
+    return (await this.ctx.storage.get<StoredImage>(imageKey(id))) ?? null;
+  }
+
+  /** Xóa khỏi storage các ảnh không còn trong lịch sử chat (bị đẩy ra khỏi 50 tin gần nhất, hoặc phòng trống nên chat bị xóa). */
+  private async sweepImages(): Promise<void> {
+    const live = new Set(chatImageIds(this.machine.state.chat));
+    const dead = this.imageIds.filter((id) => !live.has(id));
+    if (!dead.length) return;
+    this.imageIds = this.imageIds.filter((id) => live.has(id));
+    await this.ctx.storage.delete(dead.map(imageKey));
+    await this.ctx.storage.put(IMAGE_IDS_KEY, this.imageIds);
+  }
+
+  /** Lưu trạng thái sau một tin chat mới rồi gửi tin đó cho cả phòng (không gửi lại toàn bộ trạng thái phòng). */
+  private async saveChat(entry: ChatEntry): Promise<void> {
+    await this.ctx.storage.put('state', this.machine.state);
+    this.broadcastChat(entry);
+    await this.sweepImages();
   }
 
   /** Tổng quan phòng cho danh sách room (gọi từ worker qua RPC). */
@@ -151,8 +232,7 @@ export class RoomDO extends DurableObject<RoomEnv> {
           result = sent;
           break;
         }
-        await this.ctx.storage.put('state', this.machine.state);
-        this.broadcastChat(sent.entry);
+        await this.saveChat(sent.entry);
         return;
       }
     }
@@ -219,6 +299,7 @@ export class RoomDO extends DurableObject<RoomEnv> {
 
   private async save(now: number): Promise<void> {
     await this.ctx.storage.put('state', this.machine.state);
+    await this.sweepImages(); // phòng vừa trống thì chat (và ảnh) bị xóa
     const wake = this.machine.nextWakeAt();
     if (wake === null) await this.ctx.storage.deleteAlarm();
     else await this.ctx.storage.setAlarm(Math.max(wake, now + 1));
@@ -239,7 +320,7 @@ export class RoomDO extends DurableObject<RoomEnv> {
   private broadcastChat(entry: ChatEntry): void {
     for (const ws of this.ctx.getWebSockets()) {
       const pid = this.pidOf(ws);
-      if (pid && this.machine.has(pid)) this.send(ws, { type: 'chat', message: chatMessageFor(entry, pid) });
+      if (pid && this.machine.has(pid)) this.send(ws, { type: 'chat', message: chatMessageFor(entry, pid, this.machine.state.roomId) });
     }
   }
 

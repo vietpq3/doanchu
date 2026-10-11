@@ -12,6 +12,7 @@ import type { Status } from '../game/scoring';
 import type { Definition } from '../game/types';
 import { wordInfo } from '../game/vietnamese';
 import { roomName, VERSUS } from './config';
+import { chatImageUrl, type ChatImageType } from './chatImage';
 import { dayKey, endOfDay, recordWin, standings, type DailyScores } from './leaderboard';
 import { sanitizeChat, sanitizeName } from './protocol';
 import type { ChatMessage, EndReason, GameView, LastResult, LeaderboardEntry, MatchPlayerStatus, Medal, Phase, RoomView } from './protocol';
@@ -52,8 +53,19 @@ export interface ChatEntry {
   seq: number;
   from: string;
   name: string;
+  /** rỗng nếu tin chỉ có ảnh */
   text: string;
+  /** ảnh kèm tin: chỉ là thông tin, dữ liệu ảnh nằm trong storage của Durable Object (khóa `img:<id>`, xem worker/room-do.ts) */
+  image?: ChatImage;
   at: number;
+}
+
+/** Ảnh trong chat (đã kiểm tra loại ảnh theo các byte đầu ở Durable Object). */
+export interface ChatImage {
+  id: string;
+  type: ChatImageType;
+  width: number;
+  height: number;
 }
 
 /** Toàn bộ trạng thái của phòng, serialize được sang JSON để lưu trong Durable Object. */
@@ -81,7 +93,7 @@ export type ActionError =
   | 'bad_name' | 'room_full' | 'unknown_player' | 'table_locked' | 'already_seated' | 'bad_seat' | 'seat_taken'
   | 'not_seated' | 'not_enough_players' | 'already_counting' | 'room_busy' | 'no_game' | 'not_in_match' | 'already_done'
   | 'bad_request' | 'invalid_chars' | 'incomplete' | 'wrong_structure' | 'invalid_word'
-  | 'chat_empty' | 'chat_rate_limited';
+  | 'chat_empty' | 'chat_rate_limited' | 'chat_image_rate_limited';
 
 export type ActionResult = { ok: true } | { ok: false; code: ActionError; message: string };
 
@@ -106,14 +118,23 @@ function uniqueName(base: string, taken: Set<string>): string {
   }
 }
 
-/** Tin chat như người `viewerId` thấy (bỏ id người gửi). */
-export const chatMessageFor = (entry: ChatEntry, viewerId: string): ChatMessage => ({
-  seq: entry.seq, name: entry.name, text: entry.text, at: entry.at, mine: entry.from === viewerId,
+/** Tin chat như người `viewerId` thấy (bỏ id người gửi); ảnh thành đường dẫn tải ảnh của phòng `roomId`. */
+export const chatMessageFor = (entry: ChatEntry, viewerId: string, roomId: number): ChatMessage => ({
+  seq: entry.seq,
+  name: entry.name,
+  text: entry.text,
+  image: entry.image ? { url: chatImageUrl(roomId, entry.image.id), width: entry.image.width, height: entry.image.height } : null,
+  at: entry.at,
+  mine: entry.from === viewerId,
 });
 
+/** Id các ảnh còn nằm trong lịch sử chat (ảnh không còn trong đây thì Durable Object xóa khỏi storage). */
+export const chatImageIds = (chat: readonly ChatEntry[]): string[] => chat.flatMap((e) => (e.image ? [e.image.id] : []));
+
 export class RoomMachine {
-  /** thời điểm các tin chat gần đây của từng người (giới hạn tần suất); chỉ ở bộ nhớ, mất khi Durable Object ngủ cũng không sao */
+  /** thời điểm các tin chat (và các ảnh) gần đây của từng người (giới hạn tần suất); chỉ ở bộ nhớ, mất khi Durable Object ngủ cũng không sao */
   private chatTimes = new Map<string, number[]>();
+  private imageTimes = new Map<string, number[]>();
 
   /**
    * `isValidWord`: từ (đã chuẩn hoá) có hợp lệ không, tức mọi âm tiết đúng cấu trúc tiếng Việt hoặc có trong từ điển
@@ -223,6 +244,7 @@ export class RoomMachine {
     if (idx < 0) return;
     const [p] = this.state.players.splice(idx, 1);
     this.chatTimes.delete(id);
+    this.imageTimes.delete(id);
     const match = this.activeMatch;
     const mp = match?.players.find((x) => x.id === id);
     if (mp && mp.status === 'playing') mp.status = 'left';
@@ -240,20 +262,37 @@ export class RoomMachine {
   // ---------- chat ----------
 
   /**
-   * Một tin chat của người `id` (ai trong phòng cũng chat được: Sảnh chờ, Bàn chơi, đang đấu). Tên người gửi lấy từ server,
-   * không tin client. Chỉ giữ VERSUS.chatHistory tin gần nhất. Trả về tin vừa lưu để gửi cho cả phòng.
+   * Kiểm tra trước một tin chat của người `id` (có ảnh hay không) mà chưa ghi gì: Durable Object gọi trước khi lưu dữ liệu ảnh, để
+   * không phải lưu rồi xóa khi người đó gửi quá nhanh.
    */
-  chat(id: string, raw: unknown, now: number): { ok: true; entry: ChatEntry } | { ok: false; code: ActionError; message: string } {
+  canChat(id: string, now: number, withImage: boolean): ActionResult {
+    if (!this.find(id)) return fail('unknown_player', 'Bạn chưa ở trong phòng');
+    const { messages, windowMs } = VERSUS.chatRate;
+    if ((this.chatTimes.get(id) ?? []).filter((t) => now - t < windowMs).length >= messages) {
+      return fail('chat_rate_limited', 'Bạn gửi tin nhắn quá nhanh, đợi chút nhé');
+    }
+    const { images, windowMs: imageWindow } = VERSUS.chatImageRate;
+    if (withImage && (this.imageTimes.get(id) ?? []).filter((t) => now - t < imageWindow).length >= images) {
+      return fail('chat_image_rate_limited', 'Bạn gửi ảnh quá nhanh, đợi chút nhé');
+    }
+    return ok;
+  }
+
+  /**
+   * Một tin chat của người `id` (ai trong phòng cũng chat được: Sảnh chờ, Bàn chơi, đang đấu): chữ, ảnh, hoặc cả hai. Tên người gửi
+   * lấy từ server, không tin client. Chỉ giữ VERSUS.chatHistory tin gần nhất. Trả về tin vừa lưu để gửi cho cả phòng.
+   */
+  chat(id: string, raw: unknown, now: number, image?: ChatImage): { ok: true; entry: ChatEntry } | { ok: false; code: ActionError; message: string } {
     const p = this.find(id);
     if (!p) return { ok: false, code: 'unknown_player', message: 'Bạn chưa ở trong phòng' };
-    const text = sanitizeChat(raw);
-    if (!text) return { ok: false, code: 'chat_empty', message: 'Tin nhắn trống' };
-    const { messages, windowMs } = VERSUS.chatRate;
-    const recent = (this.chatTimes.get(id) ?? []).filter((t) => now - t < windowMs);
-    if (recent.length >= messages) return { ok: false, code: 'chat_rate_limited', message: 'Bạn gửi tin nhắn quá nhanh, đợi chút nhé' };
-    recent.push(now);
-    this.chatTimes.set(id, recent);
-    const entry: ChatEntry = { seq: ++this.state.chatSeq, from: id, name: p.name, text, at: now };
+    const text = sanitizeChat(raw) ?? '';
+    if (!text && !image) return { ok: false, code: 'chat_empty', message: 'Tin nhắn trống' };
+    const allowed = this.canChat(id, now, !!image);
+    if (!allowed.ok) return allowed;
+    const keep = (times: Map<string, number[]>, windowMs: number) => times.set(id, [...(times.get(id) ?? []).filter((t) => now - t < windowMs), now]);
+    keep(this.chatTimes, VERSUS.chatRate.windowMs);
+    if (image) keep(this.imageTimes, VERSUS.chatImageRate.windowMs);
+    const entry: ChatEntry = { seq: ++this.state.chatSeq, from: id, name: p.name, text, ...(image ? { image } : {}), at: now };
     this.state.chat.push(entry);
     if (this.state.chat.length > VERSUS.chatHistory) this.state.chat.splice(0, this.state.chat.length - VERSUS.chatHistory);
     return { ok: true, entry };
@@ -261,7 +300,7 @@ export class RoomMachine {
 
   /** Lịch sử chat (các tin gần nhất) cho người `viewerId`; rỗng nếu người đó không ở trong phòng. */
   chatHistoryFor(viewerId: string): ChatMessage[] {
-    return this.find(viewerId) ? this.state.chat.map((e) => chatMessageFor(e, viewerId)) : [];
+    return this.find(viewerId) ? this.state.chat.map((e) => chatMessageFor(e, viewerId, this.state.roomId)) : [];
   }
 
   // ---------- Bàn chơi ----------

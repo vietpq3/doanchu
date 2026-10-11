@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type RefObject } from 'react';
+import { ChatImageError, prepareChatImage, type PreparedImage } from '@/lib/client/chatImage';
 import { rememberEmoji, useRecentEmoji } from '@/lib/client/recentEmoji';
 import { VERSUS } from '@/lib/versus/config';
 import { EMOJI_BY_CODE, findEmojiQuery, insertEmoji, suggestEmoji, VOZ_EMOJI, type EmojiDef, type EmojiQuery } from '@/lib/versus/emoji';
@@ -12,6 +13,8 @@ interface Props {
   connected: boolean;
   /** gửi tin; false nếu chưa gửi được (mất kết nối) thì giữ nguyên chữ trong ô nhập */
   onSend: (text: string) => boolean;
+  /** gửi ảnh kèm chữ (có thể rỗng); trả về câu báo lỗi, hoặc null nếu đã gửi */
+  onSendImage: (image: PreparedImage, text: string) => Promise<string | null>;
   /** lỗi từ server (vd gửi quá nhanh) */
   serverError: string;
   pickerOpen: boolean;
@@ -24,6 +27,24 @@ const LOCAL_ERROR_MS = 3000;
 const hasFinePointer = () => window.matchMedia('(pointer: fine)').matches;
 const sameQuery = (a: EmojiQuery | null, b: EmojiQuery | null) => a === b || (!!a && !!b && a.start === b.start && a.end === b.end && a.query === b.query);
 
+const ImageIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="16" rx="2.5" />
+    <circle cx="9" cy="10" r="1.8" />
+    <path d="m21 16-5.2-5.2L6 20" />
+  </svg>
+);
+
+const PasteIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 4h6v3H9z" />
+    <path d="M15 5h2.5A1.5 1.5 0 0 1 19 6.5v13a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19.5v-13A1.5 1.5 0 0 1 6.5 5H9" />
+    <path d="M9 12h6M9 16h4" />
+  </svg>
+);
+
+const formatSize = (bytes: number) => (bytes >= 100_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1000))} KB`);
+
 const SmileIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="12" cy="12" r="9" />
@@ -34,7 +55,10 @@ const SmileIcon = () => (
 );
 
 /**
- * Ô nhập chat có emoji voz:
+ * Ô nhập chat có emoji voz và ảnh:
+ * - Hàng nút nhỏ trên ô nhập: emoji, gửi ảnh từ máy (chọn file), dán từ clipboard (ảnh, vd ảnh từ nút `Chụp ảnh màn hình`, hoặc chữ).
+ *   Ctrl+V / dán vào ô nhập một ảnh cũng được. Ảnh chọn/dán hiện thành ô xem trước (bỏ được bằng ✕); bấm Gửi thì gửi ảnh kèm chữ
+ *   đang gõ (nếu có). Ảnh lớn được thu nhỏ trước khi gửi (src/lib/client/chatImage.ts).
  * - Nút mặt cười mở bảng chọn emoji (hàng "Dùng gần đây" + toàn bộ bộ emoji); bấm một emoji thì chèn mã vào chỗ con trỏ, bảng vẫn mở
  *   để chọn tiếp; đóng bằng nút đó, Esc hoặc bấm ra ngoài.
  * - Gõ `:` + chữ (đầu tin hoặc sau dấu cách) thì hiện tối đa 3 emoji gần khớp nhất ngay trên ô nhập (bỏ dấu tiếng Việt khi so, để
@@ -42,7 +66,7 @@ const SmileIcon = () => (
  *   lên (hoặc đã dùng ↑↓); mới gõ 1 chữ (`:v`, `:p`...) thì Enter vẫn gửi tin như bình thường.
  * Ô nhập không điều khiển bằng React (như ô đoán) để bộ gõ tiếng Việt hoạt động ổn định.
  */
-export default function ChatComposer({ inputRef, connected, onSend, serverError, pickerOpen, setPickerOpen }: Props) {
+export default function ChatComposer({ inputRef, connected, onSend, onSendImage, serverError, pickerOpen, setPickerOpen }: Props) {
   const composing = useRef(false);
   /** vị trí con trỏ gần nhất: bảng emoji chèn vào đây khi ô nhập không có focus (điện thoại: bàn phím đã đóng) */
   const caret = useRef<{ start: number; end: number } | null>(null);
@@ -143,11 +167,103 @@ export default function ChatComposer({ inputRef, connected, onSend, serverError,
     }
   }
 
-  function submit(e: FormEvent) {
+  // ---------- ảnh ----------
+  /** ảnh đang chờ gửi (đã chọn/dán), kèm đường dẫn tạm để xem trước */
+  const [pending, setPending] = useState<{ image: PreparedImage; url: string } | null>(null);
+  /** đang xử lý ảnh vừa chọn/dán, hoặc đang gửi ảnh */
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => (pending ? () => URL.revokeObjectURL(pending.url) : undefined), [pending]);
+
+  async function attach(file: Blob) {
+    setBusy(true);
+    try {
+      const image = await prepareChatImage(file);
+      setPending({ image, url: URL.createObjectURL(image.blob) });
+      if (hasFinePointer()) inputRef.current?.focus();
+    } catch (err) {
+      showError(err instanceof ChatImageError ? err.message : 'Không đọc được ảnh này');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Chèn chữ (dán từ clipboard) vào chỗ con trỏ; quá độ dài tối đa thì cắt bớt. */
+  function insertText(raw: string) {
+    const input = inputRef.current;
+    if (!input) return;
+    const clean = raw.replace(/\s+/g, ' ');
+    if (!clean.trim()) {
+      showError('Clipboard không có chữ hay ảnh');
+      return;
+    }
+    const length = input.value.length;
+    const at = document.activeElement === input
+      ? { start: input.selectionStart ?? length, end: input.selectionEnd ?? length }
+      : caret.current ?? { start: length, end: length };
+    const start = Math.min(at.start, length);
+    const end = Math.min(at.end, length);
+    const room = VERSUS.chatMax - (length - (end - start));
+    if (room <= 0) {
+      showError(`Tin nhắn tối đa ${VERSUS.chatMax} ký tự`);
+      return;
+    }
+    const piece = clean.slice(0, room);
+    input.value = input.value.slice(0, start) + piece + input.value.slice(end);
+    const next = start + piece.length;
+    caret.current = { start: next, end: next };
+    if (hasFinePointer()) input.focus();
+    if (document.activeElement === input) input.setSelectionRange(next, next);
+    if (piece.length < clean.length) showError(`Tin nhắn tối đa ${VERSUS.chatMax} ký tự: đã cắt bớt`);
+  }
+
+  /** Nút dán: đọc clipboard (trình duyệt có thể hỏi quyền); có ảnh thì lấy ảnh, không thì lấy chữ. */
+  async function pasteFromClipboard() {
+    const clip = navigator.clipboard;
+    try {
+      if (clip?.read) {
+        const items = await clip.read();
+        for (const item of items) {
+          const imageType = item.types.find((t) => t.startsWith('image/'));
+          if (imageType) return attach(await item.getType(imageType));
+        }
+        const textItem = items.find((item) => item.types.includes('text/plain'));
+        return insertText(textItem ? await (await textItem.getType('text/plain')).text() : '');
+      }
+      if (clip?.readText) return insertText(await clip.readText());
+    } catch {
+      /* bị từ chối quyền đọc clipboard, hoặc trình duyệt không hỗ trợ */
+    }
+    showError('Trình duyệt không cho đọc clipboard: nhấn giữ ô nhập rồi chọn Dán (hoặc Ctrl+V)');
+  }
+
+  /** Dán (Ctrl+V, menu Dán) vào ô nhập: có ảnh thì lấy ảnh; chữ thì để trình duyệt dán như thường. */
+  function onPaste(e: ClipboardEvent<HTMLInputElement>) {
+    const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'));
+    if (!file) return;
+    e.preventDefault();
+    void attach(file);
+  }
+
+  async function submit(e: FormEvent) {
     e.preventDefault();
     const input = inputRef.current;
-    if (!input || composing.current) return;
+    if (!input || composing.current || busy) return;
     const text = sanitizeChat(input.value);
+    if (pending) {
+      setBusy(true);
+      const failure = await onSendImage(pending.image, text ?? '');
+      setBusy(false);
+      if (failure) {
+        showError(failure);
+        return;
+      }
+      setPending(null);
+      input.value = '';
+      caret.current = null;
+      setQuery(null);
+      return;
+    }
     if (!text) return;
     if (onSend(text)) {
       input.value = '';
@@ -238,10 +354,10 @@ export default function ChatComposer({ inputRef, connected, onSend, serverError,
         </div>
       )}
 
-      <form className="chat-form" onSubmit={submit} autoComplete="off">
+      <div className="chat-tools">
         <button
           ref={toggleRef}
-          className={'icon-btn chat-emoji-btn' + (pickerOpen ? ' active' : '')}
+          className={'icon-btn chat-tool' + (pickerOpen ? ' active' : '')}
           type="button"
           aria-label={pickerOpen ? 'Đóng bảng emoji' : 'Chọn emoji'}
           aria-expanded={pickerOpen}
@@ -251,6 +367,52 @@ export default function ChatComposer({ inputRef, connected, onSend, serverError,
         >
           <SmileIcon />
         </button>
+        <button
+          className="icon-btn chat-tool"
+          type="button"
+          aria-label="Gửi ảnh từ máy"
+          title="Gửi ảnh"
+          disabled={!connected || busy}
+          onClick={() => fileRef.current?.click()}
+        >
+          <ImageIcon />
+        </button>
+        <input
+          ref={fileRef}
+          className="visually-hidden"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = ''; // chọn lại đúng file đó lần sau vẫn có sự kiện
+            if (file) void attach(file);
+          }}
+        />
+        <button
+          className="icon-btn chat-tool"
+          type="button"
+          aria-label="Dán từ clipboard"
+          title="Dán (chữ hoặc ảnh)"
+          disabled={!connected || busy}
+          onMouseDown={(e) => e.preventDefault()} // giữ focus và vị trí con trỏ ở ô nhập
+          onClick={() => void pasteFromClipboard()}
+        >
+          <PasteIcon />
+        </button>
+        {pending && (
+          <span className="chat-attachment">
+            {/* eslint-disable-next-line @next/next/no-img-element -- ảnh tạm (blob:) của người dùng */}
+            <img src={pending.url} alt="Ảnh sắp gửi" />
+            <span className="chat-attachment-info">{busy ? 'Đang gửi…' : `Ảnh · ${formatSize(pending.image.blob.size)}`}</span>
+            <button className="chat-attachment-remove" type="button" aria-label="Bỏ ảnh" disabled={busy} onClick={() => setPending(null)}>✕</button>
+          </span>
+        )}
+        {!pending && busy && <span className="chat-attachment-info">Đang xử lý ảnh…</span>}
+      </div>
+
+      <form className="chat-form" onSubmit={submit} autoComplete="off">
         <label className="visually-hidden" htmlFor="chat-input">Tin nhắn</label>
         <input
           ref={inputRef}
@@ -261,7 +423,7 @@ export default function ChatComposer({ inputRef, connected, onSend, serverError,
           enterKeyHint="send"
           autoComplete="off"
           maxLength={VERSUS.chatMax}
-          placeholder={connected ? 'Nhắn tin, gõ : chèn emoji' : 'Đang nối lại…'}
+          placeholder={!connected ? 'Đang nối lại…' : pending ? 'Thêm chú thích (không bắt buộc)' : 'Nhắn tin, gõ : chèn emoji'}
           disabled={!connected}
           defaultValue=""
           role="combobox"
@@ -276,10 +438,11 @@ export default function ChatComposer({ inputRef, connected, onSend, serverError,
             setQuery(null); // rời ô nhập thì ẩn gợi ý
           }}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           onCompositionStart={() => { composing.current = true; }}
           onCompositionEnd={() => { composing.current = false; syncQuery(); }}
         />
-        <button className="btn chat-send" type="submit" disabled={!connected}>Gửi</button>
+        <button className="btn chat-send" type="submit" disabled={!connected || busy}>Gửi</button>
       </form>
     </div>
   );

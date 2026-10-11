@@ -89,7 +89,10 @@ export interface ChatMessage {
   seq: number;
   /** tên người gửi lúc gửi */
   name: string;
+  /** chữ của tin; có thể rỗng nếu tin chỉ có ảnh */
   text: string;
+  /** ảnh kèm tin (gửi bằng nút ảnh / dán); width, height để chừa đúng chỗ trước khi ảnh tải xong */
+  image: { url: string; width: number; height: number } | null;
   at: number;
   /** tin của chính người nhận */
   mine: boolean;
