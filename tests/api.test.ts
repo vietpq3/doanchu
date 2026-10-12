@@ -3,6 +3,7 @@
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, test } from 'vitest';
 import * as createRoute from '@/app/api/games/route';
+import * as gameRoute from '@/app/api/games/[id]/route';
 import * as guessRoute from '@/app/api/games/[id]/guesses/route';
 import * as hintRoute from '@/app/api/games/[id]/hints/route';
 import * as startRoute from '@/app/api/games/start/route';
@@ -338,3 +339,97 @@ describe('GET /api/games/start?id=N (đích chuyển hướng của /solo?id=N)'
   });
 });
 
+
+describe('ứng dụng di động: độ khó trong body, anyDifficulty, GET /api/games/:id', () => {
+  const post = (body: unknown, cookie?: string) =>
+    createRoute.POST(
+      new NextRequest('http://localhost/api/games', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      }),
+    );
+  const create = async (body: unknown, cookie?: string) => {
+    const res = await post(body, cookie);
+    return { status: res.status, body: await res.json() };
+  };
+  const read = async (id: string) => {
+    const res = await gameRoute.GET(new NextRequest(`http://localhost/api/games/${id}`), { params: Promise.resolve({ id }) });
+    return { status: res.status, cookie: res.headers.get('set-cookie'), cache: res.headers.get('cache-control'), body: await res.json() };
+  };
+  beforeEach(() => {
+    repo = createMemoryRepository({
+      'cổ thụ': { keyword: true, tier: 3, definitions: [{ pos: 'Danh từ', text: 'cây to, sống lâu năm' }] },
+      'vũ trụ': { keyword: true, tier: 1 },
+      'tiêu dao': { keyword: true, tier: 2 },
+      'hòa bình': { keyword: true, tier: 1 },
+    });
+    setRepositoryForTests(repo);
+  });
+
+  test('độ khó trong body được dùng và thắng cookie; giá trị lạ thì dùng cookie, rồi Thường', async () => {
+    expect((await create({ difficulty: 2 })).body.difficulty).toBe(2);
+    expect((await create({ difficulty: 3 }, 'dc_difficulty=1')).body.difficulty).toBe(3);
+    for (const bad of [0, 7, 'x', null, 1.5]) expect((await create({ difficulty: bad }, 'dc_difficulty=2')).body.difficulty).toBe(2);
+    expect((await create({ difficulty: 'x' })).body.difficulty).toBe(1);
+    expect(repo.picks).toEqual([2, 3, 2, 2, 2, 2, 2, 1]);
+  });
+
+  test('chọn số kèm độ khó trong body: chỉ được các số của độ khó đó', async () => {
+    expect(await create({ number: 3, difficulty: 1 })).toEqual({
+      status: 400,
+      body: { error: 'keyword_not_found', message: 'Độ khó Thường có từ khóa số 1 đến 2; không có số 3' },
+    });
+    expect((await create({ number: 3, difficulty: 2 }, 'dc_difficulty=1')).status).toBe(201);
+  });
+
+  test('anyDifficulty: mở được mọi số như link chia sẻ, kể cả ngoài khoảng của độ khó', async () => {
+    const opened = await create({ number: 4, anyDifficulty: true }, 'dc_difficulty=1');
+    expect(opened.status).toBe(201);
+    expect(opened.body).toMatchObject({ keywordNo: 4, difficulty: null, over: false });
+    expect(repo.games.get(opened.body.id)!.answer).toBe('cổ thụ');
+
+    const before = repo.games.size;
+    expect(await create({ number: 5, anyDifficulty: true })).toEqual({
+      status: 400,
+      body: { error: 'keyword_not_found', message: 'Không có từ khóa số 5; chọn số từ 1 đến 4' },
+    });
+    expect(repo.games.size).toBe(before);
+  });
+
+  test('anyDifficulty chỉ có tác dụng khi là true và có number', async () => {
+    expect((await create({ number: 4, anyDifficulty: 'yes' })).status).toBe(400); // vẫn giới hạn theo Thường
+    expect((await create({ number: 4, anyDifficulty: 1 })).status).toBe(400);
+    const random = await create({ anyDifficulty: true, difficulty: 2 });
+    expect(random.body.difficulty).toBe(2);
+    expect(repo.picks).toEqual([2]);
+  });
+
+  test('GET trả trạng thái ván, không lộ từ khóa khi chưa xong, không ghi cookie, không cache', async () => {
+    const { body: game } = await create({ difficulty: 1 });
+    const res = await read(game.id);
+    expect([res.status, res.cookie, res.cache]).toEqual([200, null, 'no-store']);
+    expect(res.body).toEqual(await getGame(game.id));
+    expect(res.body.answer).toBeUndefined();
+    expect(res.body.definitions).toBeUndefined();
+  });
+
+  test('GET sau khi hết ván có từ khóa và giải nghĩa', async () => {
+    const { body: game } = await create({ number: 4, anyDifficulty: true });
+    await guess(game.id, 'cổ thụ');
+    expect((await read(game.id)).body).toMatchObject({
+      over: true,
+      won: true,
+      answer: 'cổ thụ',
+      definitions: [{ pos: 'Danh từ', text: 'cây to, sống lâu năm' }],
+      rows: [{ cells: ['c', 'ổ', 't', 'h', 'ụ'], statuses: ['correct', 'correct', 'correct', 'correct', 'correct'] }],
+    });
+  });
+
+  test('GET ván không có hoặc id sai: 404 game_not_found', async () => {
+    for (const id of ['00000000-0000-0000-0000-000000000000', 'abc', '../../etc', '']) {
+      const res = await read(id);
+      expect([id, res.status, res.body.error]).toEqual([id, 404, 'game_not_found']);
+    }
+  });
+});
