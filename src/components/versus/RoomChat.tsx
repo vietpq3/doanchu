@@ -54,7 +54,7 @@ const CloseIcon = () => (
 );
 
 /**
- * Nội dung một tin chat: chữ và emoji voz (mã như `:beauty:` hiện thành ảnh, cỡ 40px lẫn trong chữ). Tin chỉ có emoji thì không có nền
+ * Nội dung một tin chat: chữ và emoji voz (mã như `::beauty::` hiện thành ảnh, cỡ 40px lẫn trong chữ). Tin chỉ có emoji thì không có nền
  * bong bóng và emoji hiện đúng cỡ gốc 48px.
  */
 function MessageText({ text }: { text: string }) {
@@ -101,7 +101,7 @@ function MessageImage({ image }: { image: NonNullable<ChatMessage['image']> }) {
  *   có tin mới của người khác khi khung đang đóng thì bubble có chấm đỏ.
  * Đặt ở layout của phòng nên không bị dựng lại khi chuyển giữa sảnh và màn đấu (giữ chữ đang gõ, vị trí cuộn, chấm đỏ); riêng khung chat
  * của bubble tự đóng khi chuyển trang (ván bắt đầu/kết thúc) để không che ô chữ.
- * Có emoji voz: bảng chọn và gợi ý khi gõ `:x` ở ChatComposer, mã emoji trong tin hiện thành ảnh (src/lib/versus/emoji.ts).
+ * Có emoji voz: bảng chọn (mở bằng nút hoặc gõ `::`) ở ChatComposer, mã emoji trong tin hiện thành ảnh (src/lib/versus/emoji.ts).
  */
 export default function RoomChat() {
   const { roomId, view, status, chat, chatError, send, onChatMessage } = useRoom();

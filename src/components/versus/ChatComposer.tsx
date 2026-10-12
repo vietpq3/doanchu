@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEve
 import { ChatImageError, prepareChatImage, type PreparedImage } from '@/lib/client/chatImage';
 import { rememberEmoji, useRecentEmoji } from '@/lib/client/recentEmoji';
 import { VERSUS } from '@/lib/versus/config';
-import { EMOJI_BY_CODE, findEmojiQuery, insertEmoji, suggestEmoji, VOZ_EMOJI, type EmojiDef, type EmojiQuery } from '@/lib/versus/emoji';
+import { EMOJI_BY_CODE, emojiCode, findEmojiQuery, insertEmoji, searchEmoji, VOZ_EMOJI, type EmojiDef, type EmojiQuery } from '@/lib/versus/emoji';
 import { sanitizeChat } from '@/lib/versus/protocol';
 import EmojiImage from './EmojiImage';
 
@@ -61,9 +61,9 @@ const SmileIcon = () => (
  *   đang gõ (nếu có). Ảnh lớn được thu nhỏ trước khi gửi (src/lib/client/chatImage.ts).
  * - Nút mặt cười mở bảng chọn emoji (hàng "Dùng gần đây" + toàn bộ bộ emoji); bấm một emoji thì chèn mã vào chỗ con trỏ, bảng vẫn mở
  *   để chọn tiếp; đóng bằng nút đó, Esc hoặc bấm ra ngoài.
- * - Gõ `:` + chữ (đầu tin hoặc sau dấu cách) thì hiện tối đa 3 emoji gần khớp nhất ngay trên ô nhập (bỏ dấu tiếng Việt khi so, để
- *   bộ gõ Telex không làm hỏng): chạm/bấm để chọn, ↑↓ để đổi, Tab để chèn, Esc để bỏ qua. Enter chèn emoji khi đã gõ từ 2 chữ trở
- *   lên (hoặc đã dùng ↑↓); mới gõ 1 chữ (`:v`, `:p`...) thì Enter vẫn gửi tin như bình thường.
+ * - Gõ `::` (mã emoji là `::tên::`) thì cũng mở bảng đó; gõ tiếp chữ thì bảng chỉ còn các emoji khớp (bỏ dấu tiếng Việt khi so, để bộ
+ *   gõ Telex không làm hỏng), không còn emoji nào khớp thì bảng ẩn. Chạm/bấm một emoji, hoặc Enter/Tab, thì thay đoạn `::x` đang gõ
+ *   bằng mã emoji rồi đóng bảng; phím mũi tên để đổi emoji đang chọn, Esc để đóng. Một dấu `:` (`:v`, `:)`, `10:30`) không mở bảng.
  * Ô nhập không điều khiển bằng React (như ô đoán) để bộ gõ tiếng Việt hoạt động ổn định.
  */
 export default function ChatComposer({ inputRef, connected, onSend, onSendImage, serverError, pickerOpen, setPickerOpen }: Props) {
@@ -73,19 +73,14 @@ export default function ChatComposer({ inputRef, connected, onSend, onSendImage,
   const recent = useRecentEmoji();
   const recentEmoji = useMemo(() => recent.map((c) => EMOJI_BY_CODE.get(c)).filter((e): e is EmojiDef => !!e), [recent]);
 
-  // ---------- gợi ý khi gõ ":x" ----------
+  // ---------- gõ "::x" ----------
   const [query, setQuery] = useState<EmojiQuery | null>(null);
-  /** đoạn ":x" (theo vị trí dấu ":") người dùng đã bấm Esc để bỏ gợi ý */
+  /** đoạn "::x" (theo vị trí "::") người dùng đã đóng bảng (Esc, nút mặt cười) */
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const suggestions = useMemo(
-    () => (query && query.start !== dismissedAt ? suggestEmoji(query.query, recent) : []),
-    [query, dismissedAt, recent],
-  );
-  const queryKey = query ? `${query.start}:${query.query}` : '';
-  // ô đang chọn trong danh sách gợi ý; chỉ có hiệu lực với đúng đoạn đang gõ (gõ thêm chữ thì về ô đầu)
-  const [nav, setNav] = useState({ key: '', index: 0 });
-  const navigated = nav.key === queryKey && queryKey !== '';
-  const active = navigated ? Math.min(nav.index, suggestions.length - 1) : 0;
+  const typing = query && query.start !== dismissedAt ? query : null;
+  const typingText = typing?.query ?? null;
+  const matches = useMemo(() => (typingText ? searchEmoji(typingText, recent) : []), [typingText, recent]);
+  const queryKey = typing ? `${typing.start}:${typing.query}` : '';
 
   function syncQuery() {
     const input = inputRef.current;
@@ -124,7 +119,7 @@ export default function ChatComposer({ inputRef, connected, onSend, onSendImage,
     setQuery(null);
   }
 
-  /** Chọn một gợi ý: thay đoạn ":x" đang gõ bằng mã emoji. */
+  /** Chọn emoji khi đang gõ "::x": thay đoạn đó bằng mã emoji (bảng đóng, trừ khi đã mở bằng nút mặt cười). */
   function accept(emoji: EmojiDef) {
     if (query) insert(emoji, query.start, query.end, false);
   }
@@ -138,33 +133,6 @@ export default function ChatComposer({ inputRef, connected, onSend, onSendImage,
       ? { start: input.selectionStart ?? length, end: input.selectionEnd ?? length }
       : caret.current ?? { start: length, end: length };
     insert(emoji, Math.min(at.start, length), Math.min(at.end, length), hasFinePointer());
-  }
-
-  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (composing.current || e.nativeEvent.isComposing) return;
-    if (suggestions.length > 0 && query) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        const step = e.key === 'ArrowDown' ? 1 : -1;
-        setNav({ key: queryKey, index: (active + step + suggestions.length) % suggestions.length });
-        return;
-      }
-      if ((e.key === 'Tab' && !e.shiftKey) || (e.key === 'Enter' && (query.query.length >= 2 || navigated))) {
-        e.preventDefault(); // Tab: không chuyển focus sang nút Gửi; Enter: không gửi tin
-        accept(suggestions[active].emoji);
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation(); // không đóng luôn khung chat
-        setDismissedAt(query.start);
-        return;
-      }
-    }
-    if (e.key === 'Escape' && pickerOpen) {
-      e.stopPropagation();
-      setPickerOpen(false);
-    }
   }
 
   // ---------- ảnh ----------
@@ -274,6 +242,7 @@ export default function ChatComposer({ inputRef, connected, onSend, onSendImage,
 
   // ---------- bảng chọn emoji ----------
   const pickerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!pickerOpen) return;
@@ -285,57 +254,139 @@ export default function ChatComposer({ inputRef, connected, onSend, onSendImage,
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [pickerOpen, setPickerOpen]);
 
-  const cell = (emoji: EmojiDef) => (
+  // Bảng mở do gõ "::" (mới gõ "::", hoặc có emoji khớp chữ gõ tiếp); không còn emoji nào khớp thì không tính (bảng ẩn, hoặc nếu đã mở
+  // bằng nút mặt cười thì về lại toàn bộ bộ emoji).
+  const typingShown = !!typing && (!typingText || matches.length > 0);
+  // Các nhóm emoji trong bảng: đang gõ "::x" thì chỉ các emoji khớp; còn lại (kể cả mới gõ "::") thì "Dùng gần đây" + toàn bộ.
+  const sections = typingShown && typingText
+    ? [{ key: 'match', title: `Emoji khớp “${typingText}”`, emoji: matches.map((m) => m.emoji) }]
+    : [
+        ...(recentEmoji.length > 0 ? [{ key: 'recent', title: 'Dùng gần đây', emoji: recentEmoji }] : []),
+        { key: 'all', title: 'Emoji voz', emoji: VOZ_EMOJI },
+      ];
+  const shown = pickerOpen || typingShown;
+  const cellCount = sections.reduce((n, section) => n + section.emoji.length, 0);
+  // emoji đang chọn khi gõ "::x" (Enter/Tab chèn emoji này); chỉ có hiệu lực với đúng đoạn đang gõ, gõ thêm chữ thì về emoji đầu
+  const [nav, setNav] = useState({ key: '', index: 0 });
+  const active = typingShown ? (nav.key === queryKey ? Math.min(nav.index, cellCount - 1) : 0) : -1;
+  const activeEmoji = active >= 0 ? sections.flatMap((section) => section.emoji)[active] : undefined;
+  const activeAlias = typingText ? matches[active]?.alias ?? null : null;
+
+  // Giữ emoji đang chọn trong vùng nhìn thấy của bảng (chỉ cuộn bảng, không cuộn trang); emoji đầu thì cuộn lên đầu để thấy tiêu đề.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (active < 0 || !scroller) return;
+    if (active === 0) {
+      scroller.scrollTop = 0;
+      return;
+    }
+    const cell = scroller.querySelector<HTMLElement>(`#chat-emoji-cell-${active}`);
+    if (!cell) return;
+    const box = scroller.getBoundingClientRect();
+    const rect = cell.getBoundingClientRect();
+    if (rect.top < box.top) scroller.scrollTop -= box.top - rect.top + 4;
+    else if (rect.bottom > box.bottom) scroller.scrollTop += rect.bottom - box.bottom + 4;
+  }, [active, queryKey]);
+
+  /** Emoji kế tiếp theo phím mũi tên: ←→ sang ô bên cạnh, ↑↓ sang hàng trên/dưới (ô gần nhất theo chiều ngang, đo trên bảng). */
+  function move(key: string): number {
+    const cells = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('.emoji-cell') ?? []);
+    if (cells.length === 0) return 0;
+    if (key === 'ArrowLeft') return Math.max(0, active - 1);
+    if (key === 'ArrowRight') return Math.min(cells.length - 1, active + 1);
+    const from = cells[active].getBoundingClientRect();
+    const x = from.left + from.width / 2;
+    const down = key === 'ArrowDown';
+    let rowTop: number | null = null;
+    let best = active;
+    let bestDx = Infinity;
+    cells.forEach((cell, i) => {
+      const rect = cell.getBoundingClientRect();
+      if (down ? rect.top <= from.top + 1 : rect.top >= from.top - 1) return;
+      const nearer = rowTop === null || (down ? rect.top < rowTop - 1 : rect.top > rowTop + 1);
+      if (!nearer && Math.abs(rect.top - rowTop!) > 1) return;
+      const dx = Math.abs(rect.left + rect.width / 2 - x);
+      if (nearer || dx < bestDx) {
+        rowTop = rect.top;
+        best = i;
+        bestDx = dx;
+      }
+    });
+    return best;
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (composing.current || e.nativeEvent.isComposing) return;
+    if (typingShown && typing && activeEmoji) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        setNav({ key: queryKey, index: move(e.key) });
+        return;
+      }
+      if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
+        e.preventDefault(); // Tab: không chuyển focus sang nút Gửi; Enter: không gửi tin
+        accept(activeEmoji);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation(); // không đóng luôn khung chat
+        setDismissedAt(typing.start);
+        return;
+      }
+    }
+    if (e.key === 'Escape' && pickerOpen) {
+      e.stopPropagation();
+      setPickerOpen(false);
+    }
+  }
+
+  /** Bảng đang mở do gõ "::" lúc bấm nút mặt cười: bấm nút thì đóng bảng (lúc click thì ô nhập đã mất focus, gợi ý đã ẩn). */
+  const typingAtPointer = useRef<number | null>(null);
+  function toggle() {
+    const start = typingAtPointer.current;
+    typingAtPointer.current = null;
+    if (start !== null) {
+      setDismissedAt(start);
+      setPickerOpen(false);
+    } else {
+      setPickerOpen(!pickerOpen);
+    }
+  }
+
+  let cellIndex = 0;
+  const cell = (emoji: EmojiDef, index: number) => (
     <button
       key={emoji.code}
-      className="emoji-cell"
+      id={typingShown ? `chat-emoji-cell-${index}` : undefined}
+      className={'emoji-cell' + (index === active ? ' active' : '')}
       type="button"
-      aria-label={`:${emoji.code}:`}
-      title={`:${emoji.code}: ${emoji.label}`}
+      aria-label={emojiCode(emoji)}
+      title={`${emojiCode(emoji)} ${emoji.label}`}
       onMouseDown={(e) => e.preventDefault()} // giữ focus (và bàn phím, nếu đang mở) ở ô nhập
-      onClick={() => pick(emoji)}
+      onClick={() => (typingShown ? accept(emoji) : pick(emoji))}
     >
       <EmojiImage emoji={emoji} maxWidth={40} maxHeight={40} />
     </button>
   );
 
   const error = localError?.message ?? serverError;
-  const showSuggestions = suggestions.length > 0;
 
   return (
     <div className="chat-compose">
       <p className="chat-error" role="alert">{error}</p>
 
-      {showSuggestions && (
-        <div className="emoji-suggest">
-          <ul id="chat-emoji-suggest" role="listbox" aria-label="Gợi ý emoji">
-            {suggestions.map(({ emoji, alias }, i) => (
-              <li
-                key={emoji.code}
-                id={`chat-emoji-opt-${i}`}
-                className={'emoji-option' + (i === active ? ' active' : '')}
-                role="option"
-                aria-selected={i === active}
-                onMouseDown={(e) => e.preventDefault()} // giữ focus và bàn phím ở ô nhập
-                onClick={() => accept(emoji)}
-              >
-                <span className="emoji-option-pic"><EmojiImage emoji={emoji} maxWidth={32} maxHeight={32} /></span>
-                <code>:{emoji.code}:</code>
-                {alias && <span className="emoji-option-alias">{alias}</span>}
-              </li>
-            ))}
-          </ul>
-          <p className="emoji-suggest-hint" aria-hidden="true">↑↓ để chọn · Tab để chèn · Esc để bỏ qua</p>
-        </div>
-      )}
-
-      {pickerOpen && (
+      {shown && (
         <div
           ref={pickerRef}
           id="chat-emoji-picker"
           className="emoji-picker"
           role="dialog"
           aria-label="Chọn emoji"
+          // bấm vào chỗ trống/tiêu đề trong bảng thì ô nhập không mất focus (bảng mở do gõ "::" không bị đóng); thanh cuộn thì vẫn kéo được
+          onMouseDown={(e) => {
+            if (e.target !== scrollRef.current) e.preventDefault();
+          }}
           onKeyDown={(e) => {
             if (e.key !== 'Escape') return;
             e.stopPropagation();
@@ -343,27 +394,37 @@ export default function ChatComposer({ inputRef, connected, onSend, onSendImage,
             toggleRef.current?.focus();
           }}
         >
-          {recentEmoji.length > 0 && (
-            <>
-              <p className="emoji-picker-title">Dùng gần đây</p>
-              <div className="emoji-grid">{recentEmoji.map(cell)}</div>
-            </>
+          <div ref={scrollRef} className="emoji-picker-scroll">
+            {sections.map((section) => (
+              <div key={section.key}>
+                <p className="emoji-picker-title">{section.title}</p>
+                <div className="emoji-grid">{section.emoji.map((emoji) => cell(emoji, cellIndex++))}</div>
+              </div>
+            ))}
+          </div>
+          {activeEmoji && (
+            <p className="emoji-picker-foot" aria-hidden="true">
+              <code>{emojiCode(activeEmoji)}</code>
+              {activeAlias && <span>{activeAlias}</span>}
+              <span className="emoji-picker-keys">↑↓←→ chọn · Enter chèn · Esc đóng</span>
+            </p>
           )}
-          <p className="emoji-picker-title">Emoji voz</p>
-          <div className="emoji-grid">{VOZ_EMOJI.map(cell)}</div>
         </div>
       )}
 
       <div className="chat-tools">
         <button
           ref={toggleRef}
-          className={'icon-btn chat-tool' + (pickerOpen ? ' active' : '')}
+          className={'icon-btn chat-tool' + (shown ? ' active' : '')}
           type="button"
-          aria-label={pickerOpen ? 'Đóng bảng emoji' : 'Chọn emoji'}
-          aria-expanded={pickerOpen}
+          aria-label={shown ? 'Đóng bảng emoji' : 'Chọn emoji'}
+          aria-expanded={shown}
           aria-controls="chat-emoji-picker"
           title="Emoji"
-          onClick={() => setPickerOpen(!pickerOpen)}
+          onPointerDown={() => {
+            typingAtPointer.current = typingShown && typing ? typing.start : null;
+          }}
+          onClick={toggle}
         >
           <SmileIcon />
         </button>
@@ -423,19 +484,19 @@ export default function ChatComposer({ inputRef, connected, onSend, onSendImage,
           enterKeyHint="send"
           autoComplete="off"
           maxLength={VERSUS.chatMax}
-          placeholder={!connected ? 'Đang nối lại…' : pending ? 'Thêm chú thích (không bắt buộc)' : 'Nhắn tin, gõ : chèn emoji'}
+          placeholder={!connected ? 'Đang nối lại…' : pending ? 'Thêm chú thích (không bắt buộc)' : 'Nhắn tin, gõ :: chèn emoji'}
           disabled={!connected}
           defaultValue=""
           role="combobox"
           aria-autocomplete="list"
-          aria-expanded={showSuggestions}
-          aria-controls={showSuggestions ? 'chat-emoji-suggest' : undefined}
-          aria-activedescendant={showSuggestions ? `chat-emoji-opt-${active}` : undefined}
+          aria-expanded={shown}
+          aria-controls={shown ? 'chat-emoji-picker' : undefined}
+          aria-activedescendant={activeEmoji ? `chat-emoji-cell-${active}` : undefined}
           onInput={syncQuery}
           onSelect={syncQuery}
           onBlur={() => {
             syncQuery(); // nhớ vị trí con trỏ cho bảng emoji
-            setQuery(null); // rời ô nhập thì ẩn gợi ý
+            setQuery(null); // rời ô nhập thì đóng bảng mở do gõ "::"
           }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}

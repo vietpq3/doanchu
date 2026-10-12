@@ -815,9 +815,9 @@ describe('chat của phòng', () => {
   });
 });
 
-describe('Leader Board / Bảng xếp hạng (số ván thắng trong ngày của người đang ở trong phòng, reset 00:00 giờ Việt Nam)', () => {
-  // T0 = 1970-01-01 00:16:40 UTC = 07:16:40 giờ Việt Nam; 00:00 ngày hôm sau (giờ VN) là 17:00 UTC
-  const MIDNIGHT = 17 * 60 * 60_000;
+describe('Leader Board / Bảng xếp hạng (số ván thắng của người đang ở trong phòng, còn mãi chừng nào phòng còn người)', () => {
+  const GRACE = VERSUS.leaderboardEmptyGraceMs;
+  const DAY = 24 * 60 * 60_000;
 
   /** Một ván giữa hai người `p1`, `p2` (ngồi ô 1, 2; p1 bấm Start) lúc `now`: `winner` đoán đúng, null = cả hai hết lượt. */
   function playMatch(m: RoomMachine, p1: string, p2: string, winner: string | null, now: number): number {
@@ -922,35 +922,103 @@ describe('Leader Board / Bảng xếp hạng (số ván thắng trong ngày củ
     join(m, 'a', 'An', (t += 1000));
     expect(board(m, 'b', t)).toEqual(['1.An (2):1*', '2.Bình:0', '3.An:0']);
     expect(view(m, 'b', t).medals).toEqual({ 'An (2)': 1 });
-    // phòng trống: số ván vẫn được nhớ trong ngày
+    // phòng trống rồi có người vào lại ngay: số ván vẫn còn
     for (const id of ['a', 'b', 'x']) m.leave(id, t);
     join(m, 'a', 'An', (t += 1000));
     expect(board(m, 'a', t)).toEqual(['1.An:1*']);
   });
 
-  test('00:00 giờ Việt Nam thì reset; phòng có người thì thức dậy đúng lúc đó để cập nhật', () => {
+  test('phòng còn người thì bảng còn mãi: không còn reset lúc 00:00, không cần alarm', () => {
     const m = twoInLobby();
-    const t = playMatch(m, 'a', 'b', 'a', T0);
-    expect(t).toBeLessThan(MIDNIGHT);
-    expect(m.nextWakeAt()).toBe(MIDNIGHT);
-    expect(board(m, 'a', MIDNIGHT - 1)).toEqual(['1.An:1*', '2.Bình:0']);
-    expect(board(m, 'a', MIDNIGHT)).toEqual(['1.An:0', '2.Bình:0']); // ngày mới, kể cả trước khi alarm chạy
-    m.tick(MIDNIGHT);
-    expect(m.state.scores).toMatchObject({ entries: [], crowns: [] });
+    let t = playMatch(m, 'a', 'b', 'a', T0);
     expect(m.nextWakeAt()).toBeNull();
-    const t2 = playMatch(m, 'b', 'a', 'b', MIDNIGHT + 1000);
-    expect(board(m, 'a', t2)).toEqual(['1.Bình:1*', '2.An:0']);
-    expect(m.nextWakeAt()).toBe(MIDNIGHT + 24 * 60 * 60_000);
+    m.tick((t += 3 * DAY));
+    expect(board(m, 'b', t)).toEqual(['1.An:1*', '2.Bình:0']);
+    // có người rời rồi vào lại, nhiều ngày sau, phòng vẫn luôn còn người: số ván vẫn còn
+    m.leave('a', t);
+    join(m, 'a', 'An', (t += 2 * DAY));
+    expect(board(m, 'b', t)).toEqual(['1.An:1*', '2.Bình:0']);
   });
 
-  test('phòng trống thì không cần thức dậy lúc 00:00 (người vào sau thấy bảng đã reset)', () => {
+  test(`phòng không còn ai (liên tục từ ${GRACE / 1000} giây) thì reset: người vào sau thấy bảng mới`, () => {
     const m = twoInLobby();
     const t = playMatch(m, 'a', 'b', 'a', T0);
-    m.leave('a', t);
     m.leave('b', t);
-    expect(m.nextWakeAt()).toBeNull();
-    join(m, 'a', 'An', MIDNIGHT + 5);
-    expect(board(m, 'a', MIDNIGHT + 5)).toEqual(['1.An:0']);
+    m.leave('a', t + 5);
+    expect(m.state.scores.emptySince).toBe(t + 5); // lúc người cuối cùng rời đi
+    expect(m.nextWakeAt()).toBeNull(); // không cần thức dậy: reset lúc có người vào
+    join(m, 'b', 'Bình', t + 5 + GRACE);
+    expect(board(m, 'b', t + 5 + GRACE)).toEqual(['1.Bình:0']);
+    join(m, 'a', 'An', t + 6 + GRACE);
+    expect(board(m, 'b', t + 6 + GRACE)).toEqual(['1.Bình:0', '2.An:0']); // bằng nhau: ai vào trước xếp trên
+    expect(m.state.scores).toEqual({ entries: [], crowns: [], emptySince: null });
+  });
+
+  test(`phòng trống chưa tới ${GRACE / 1000} giây (người chơi một mình tải lại trang) thì giữ nguyên`, () => {
+    const m = twoInLobby();
+    const t = playMatch(m, 'a', 'b', 'a', T0);
+    m.leave('b', t);
+    m.disconnect('a', t + 10); // ở Sảnh chờ: rời phòng ngay, phòng trống
+    expect(m.isEmpty).toBe(true);
+    join(m, 'a', 'An', t + 9 + GRACE);
+    expect(board(m, 'a', t + 9 + GRACE)).toEqual(['1.An:1*']);
+    expect(m.state.scores.emptySince).toBeNull();
+    // lần trống sau tính lại từ đầu
+    m.leave('a', t + 2 * GRACE);
+    join(m, 'a', 'An', t + 3 * GRACE - 1);
+    expect(board(m, 'a', t + 3 * GRACE - 1)).toEqual(['1.An:1*']);
+  });
+
+  test('deploy (Durable Object khởi động lại, mọi người nối lại sau vài giây): giữ nguyên số ván và vương miện', () => {
+    const m = twoInLobby();
+    join(m, 'c', 'Chi');
+    let t = playMatch(m, 'a', 'b', 'a', T0);
+    t = playMatch(m, 'a', 'c', 'a', t); // An 2
+    t = playMatch(m, 'b', 'c', 'b', t); // Bình 1
+    expect(board(m, 'c', t)).toEqual(['1.An:2*', '2.Bình:1*', '3.Chi:0']);
+    const restored = new RoomMachine(JSON.parse(JSON.stringify(m.state)), () => true);
+    restored.reconcile(new Set(), (t += 1000)); // không còn socket nào: mọi người rời phòng, phòng trống
+    expect(restored.isEmpty).toBe(true);
+    expect(restored.state.chat).toEqual([]); // chat thì vẫn xóa ngay khi phòng trống (như trước)
+    join(restored, 'c', 'Chi', (t += 1500));
+    join(restored, 'b', 'Bình', (t += 500));
+    join(restored, 'a', 'An', (t += 500));
+    expect(board(restored, 'c', t)).toEqual(['1.An:2*', '2.Bình:1*', '3.Chi:0']);
+  });
+
+  test('cả phòng mất kết nối giữa ván: quá hạn chờ nối lại thì phòng trống; trống đủ lâu thì reset', () => {
+    const m = twoInLobby();
+    let t = playMatch(m, 'a', 'b', 'a', T0);
+    expect(m.sit('a', 0)).toEqual({ ok: true });
+    expect(m.sit('b', 1)).toEqual({ ok: true });
+    expect(m.start('a', t)).toEqual({ ok: true });
+    t += VERSUS.countdownMs;
+    m.tick(t);
+    expect(m.beginMatch(ANSWER, DEFS, t)).toBe(true);
+    m.disconnect('a', t);
+    m.disconnect('b', t);
+    expect(m.isEmpty).toBe(false); // còn chờ nối lại
+    m.tick((t += VERSUS.reconnectGraceMs));
+    expect(m.isEmpty).toBe(true);
+    expect(m.state.scores.emptySince).toBe(t);
+    join(m, 'a', 'An', t + GRACE);
+    expect(board(m, 'a', t + GRACE)).toEqual(['1.An:0']);
+  });
+
+  test('trạng thái do bản cũ lưu (reset lúc 00:00, có trường "day"): phòng có người thì giữ số ván, phòng trống thì reset', () => {
+    const m = twoInLobby();
+    const t = playMatch(m, 'a', 'b', 'a', T0);
+    const old = JSON.parse(JSON.stringify(m.state));
+    old.scores = { day: '1970-01-01', entries: old.scores.entries, crowns: old.scores.crowns };
+    const kept = new RoomMachine(JSON.parse(JSON.stringify(old)), () => true);
+    expect(kept.state.scores).not.toHaveProperty('day');
+    expect(kept.state.scores.emptySince).toBeNull();
+    expect(board(kept, 'b', t + DAY)).toEqual(['1.An:1*', '2.Bình:0']);
+    const emptyOld = { ...JSON.parse(JSON.stringify(old)), players: [] };
+    const reset = new RoomMachine(emptyOld, () => true);
+    expect(reset.state.scores).toEqual({ entries: [], crowns: [], emptySince: 0 });
+    join(reset, 'a', 'An', t);
+    expect(board(reset, 'a', t)).toEqual(['1.An:0']);
   });
 
   test('trạng thái do bản cũ lưu (chưa có Leader Board, hoặc chưa có vương miện) đọc được', () => {

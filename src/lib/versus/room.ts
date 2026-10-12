@@ -13,7 +13,7 @@ import type { Definition } from '../game/types';
 import { wordInfo } from '../game/vietnamese';
 import { roomName, VERSUS } from './config';
 import { chatImageUrl, type ChatImageType } from './chatImage';
-import { dayKey, endOfDay, recordWin, standings, type DailyScores } from './leaderboard';
+import { emptyScores, expired, recordWin, standings, type RoomScores } from './leaderboard';
 import { sanitizeChat, sanitizeName } from './protocol';
 import type { ChatMessage, EndReason, GameView, LastResult, LeaderboardEntry, MatchPlayerStatus, Medal, Phase, RoomView } from './protocol';
 
@@ -85,8 +85,8 @@ export interface RoomState {
   chat: ChatEntry[];
   /** số thứ tự của tin chat gần nhất (chỉ tăng) */
   chatSeq: number;
-  /** Leader Board: số ván thắng trong ngày (giờ Việt Nam) của từng người, kể cả người đã rời; KHÔNG xóa khi phòng trống, chỉ reset lúc 00:00 */
-  scores: DailyScores;
+  /** Leader Board: số ván thắng của từng người, kể cả người đã rời; reset khi phòng trống (quá VERSUS.leaderboardEmptyGraceMs) */
+  scores: RoomScores;
 }
 
 export type ActionError =
@@ -149,15 +149,22 @@ export class RoomMachine {
     if (state.lastResult) state.lastResult.definitions ??= [];
     state.chat ??= [];
     state.chatSeq ??= 0;
-    state.scores ??= { day: '', entries: [], crowns: [] };
+    state.scores ??= emptyScores();
     state.scores.crowns ??= [];
+    // Bản cũ (đến v1.3.15) reset Leader Board lúc 00:00 (có trường `day`) và không lưu lúc phòng trống: phòng đang trống thì reset luôn,
+    // phòng có người thì giữ nguyên số ván.
+    if ('day' in state.scores) {
+      if (state.players.length === 0) state.scores = emptyScores();
+      delete (state.scores as { day?: string }).day;
+    }
+    state.scores.emptySince ??= state.players.length === 0 ? 0 : null;
   }
 
   static create(roomId: number, isValidWord: (word: string) => boolean): RoomMachine {
     return new RoomMachine(
       {
         roomId, phase: 'idle', players: [], countdownEndsAt: null, difficulty: DEFAULT_DIFFICULTY, lockedUntil: null, match: null, lastResult: null,
-        reviewWord: null, chat: [], chatSeq: 0, scores: { day: '', entries: [], crowns: [] },
+        reviewWord: null, chat: [], chatSeq: 0, scores: emptyScores(),
       },
       isValidWord,
     );
@@ -205,11 +212,13 @@ export class RoomMachine {
     if (this.state.players.filter((p) => p.seat === null).length >= VERSUS.lobbyMax) return fail('room_full', 'Phòng đã đầy');
     const taken = new Set(this.state.players.map((p) => p.name.toLowerCase()));
     const name = uniqueName(base, taken);
+    if (this.state.players.length === 0 && expired(this.state.scores, now)) this.state.scores = emptyScores();
+    this.state.scores.emptySince = null;
     this.state.players.push({ id, name, seat: null, joinedAt: now, disconnectedAt: null });
     // đã có trên Leader Board (vd vào lại sau khi đổi tên): hiện tên mới
     const score = this.state.scores.entries.find((e) => e.id === id);
     if (score) score.name = name;
-    this.updateCrowns(now);
+    this.updateCrowns();
     return ok;
   }
 
@@ -250,13 +259,18 @@ export class RoomMachine {
     if (mp && mp.status === 'playing') mp.status = 'left';
     if (this.state.phase === 'countdown' && p.seat !== null) this.cancelCountdown();
     this.checkEnd(now);
-    this.updateCrowns(now);
-    this.clearChatIfEmpty();
+    this.updateCrowns();
+    this.onEmpty(now);
   }
 
-  /** Phòng không còn ai thì xóa chat: người vào sau không thấy cuộc trò chuyện cũ của những người đã đi. */
-  private clearChatIfEmpty(): void {
-    if (this.state.players.length === 0) this.state.chat = [];
+  /**
+   * Phòng không còn ai: xóa chat ngay (người vào sau không thấy cuộc trò chuyện cũ của những người đã đi); ghi lại lúc phòng trống để
+   * reset Leader Board nếu phòng trống đủ lâu (xem connect()).
+   */
+  private onEmpty(now: number): void {
+    if (this.state.players.length > 0) return;
+    this.state.chat = [];
+    this.state.scores.emptySince ??= now;
   }
 
   // ---------- chat ----------
@@ -358,7 +372,6 @@ export class RoomMachine {
    */
   tick(now: number): { needAnswer: boolean; reviewWord: string | null; difficulty: Difficulty } {
     const s = this.state;
-    this.rollDay(now);
     let needAnswer = false;
     if (s.phase === 'countdown' && s.countdownEndsAt !== null && now >= s.countdownEndsAt) {
       if (this.seated().length >= VERSUS.minPlayersToStart) {
@@ -395,22 +408,12 @@ export class RoomMachine {
       times.push(match.endsAt);
       for (const p of s.players) if (p.disconnectedAt !== null) times.push(p.disconnectedAt + VERSUS.reconnectGraceMs);
     }
-    // Leader Board reset lúc 00:00: chỉ cần thức dậy để cập nhật cho người đang ở trong phòng; phòng trống thì để tới lần vào sau
-    if (s.players.length && s.scores.entries.length && s.scores.day) times.push(endOfDay(s.scores.day));
     return times.length ? Math.min(...times) : null;
   }
 
-  /** Sang ngày mới (giờ Việt Nam) thì Leader Board bắt đầu lại từ đầu. */
-  private rollDay(now: number): void {
-    const day = dayKey(now);
-    if (this.state.scores.day === day) return;
-    this.state.scores = { day, entries: [], crowns: [] };
-  }
-
   /** Tính lại vương miện (khi có người vào/rời phòng, có ván thắng): bằng số ván thì người đang giữ vương miện được giữ. */
-  private updateCrowns(now: number): void {
-    this.rollDay(now);
-    this.state.scores.crowns = standings(this.state.scores, this.state.players, true).filter((r) => r.medal).map((r) => r.id);
+  private updateCrowns(): void {
+    this.state.scores.crowns = standings(this.state.scores, this.state.players).filter((r) => r.medal).map((r) => r.id);
   }
 
   // ---------- ván đấu ----------
@@ -481,10 +484,7 @@ export class RoomMachine {
     const match = s.match;
     if (!match || match.finished) return;
     match.finished = { winnerId: winner?.id ?? null, winnerName: winner?.name ?? null, endedAt: now, reason };
-    if (winner) {
-      this.rollDay(now);
-      recordWin(s.scores, winner.id, winner.name, now);
-    }
+    if (winner) recordWin(s.scores, winner.id, winner.name, now);
     s.lastResult = { word: match.answer, winnerName: match.finished.winnerName, endedAt: now, definitions: match.definitions };
     s.phase = 'locked';
     s.lockedUntil = now + VERSUS.resultLockMs;
@@ -493,8 +493,8 @@ export class RoomMachine {
     s.players = s.players.filter((p) => p.disconnectedAt === null); // đang chờ nối lại mà ván đã xong: coi như đã rời
     for (const p of s.players) p.seat = null;
     for (const mp of match.players) if (mp.status === 'playing' && !s.players.some((p) => p.id === mp.id)) mp.status = 'left';
-    this.updateCrowns(now); // có ván thắng, và có thể có người vừa bị coi như rời phòng
-    this.clearChatIfEmpty();
+    this.updateCrowns(); // có ván thắng, và có thể có người vừa bị coi như rời phòng
+    this.onEmpty(now);
   }
 
   // ---------- góc nhìn của từng người chơi ----------
@@ -526,8 +526,8 @@ export class RoomMachine {
       };
     }
 
-    // Leader Board: những người đang ở trong phòng (số liệu của ngày trước coi như đã reset, kể cả khi chưa có sự kiện nào để rollDay chạy)
-    const table = standings(s.scores, s.players, s.scores.day === dayKey(now));
+    // Leader Board: những người đang ở trong phòng
+    const table = standings(s.scores, s.players);
     const leaderboard: LeaderboardEntry[] = table.map((r, i) => ({ name: r.name, wins: r.wins, rank: i + 1, isYou: r.id === id }));
     const medals: Record<string, Medal> = {};
     for (const r of table) if (r.medal) medals[r.name] = r.medal;
