@@ -116,7 +116,7 @@ export default function InsideRoomScreen() {
                   <li
                     key={name}
                     className={'name-tag' + (name === view.youName && view.youSeat === null ? ' you' : '') + medalClass(medal)}
-                    title={medal ? `${MEDAL_NAMES[medal]} bảng xếp hạng hôm nay` : undefined}
+                    title={medal ? `${MEDAL_NAMES[medal]} bảng xếp hạng của phòng` : undefined}
                   >
                     {medal && <Crown />}
                     {name}

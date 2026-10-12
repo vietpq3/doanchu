@@ -450,7 +450,7 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   await expect(b.page.locator('.last-result')).toContainText(a.name);
   await expect(b.page.locator('.last-result .defs li').first()).toBeVisible();
   await expect(b.lobbyTags).toHaveCount(3);
-  // Bảng xếp hạng hôm nay: a thắng 1 ván, hạng nhất có vương miện; b, c vẫn có trên bảng với 0 ván, không có vương miện;
+  // Bảng xếp hạng: a thắng 1 ván, hạng nhất có vương miện; b, c vẫn có trên bảng với 0 ván, không có vương miện;
   // thẻ tên của a ở Sảnh chờ có khung vàng và vương miện, người khác thì không
   const rows = b.page.locator('.lb-row');
   await expect(rows).toHaveCount(3);
@@ -481,7 +481,16 @@ test('ván đấu: đếm ngược 5s, cùng từ khóa, thấy số lượt c�
   await a.sit(1);
   await expect(a.takenSeats).toHaveCount(1);
 
-  for (const p of [a, b, c]) await p.close();
+  // b, c đi; a (người cuối cùng trong phòng) tải lại trang: phòng trống trong chốc lát nhưng Bảng xếp hạng vẫn còn
+  // (chỉ reset khi phòng trống liên tục 30 giây)
+  await b.close();
+  await c.close();
+  await expect(a.page.locator('.lb-row')).toHaveCount(1); // trên bảng chỉ còn a
+  await a.page.reload();
+  await expect(a.page.getByRole('heading', { name: /Sảnh chờ/ })).toBeVisible();
+  await expect(a.page.locator('.lb-wins')).toHaveText(['1']);
+  await expect(a.page.locator('.lb-row.medal-1 .lb-name')).toContainText(a.name);
+  await a.close();
 });
 
 test('tải lại trang giữa ván vẫn còn ván của mình', async ({ browser }, testInfo) => {
@@ -544,43 +553,103 @@ test('chat: laptop có khung chat bên cạnh, điện thoại có bubble (chấ
   await b.chat(reply);
   await expect(a.chatMessage(reply)).toContainText(b.name);
 
-  // emoji: gõ ":bea" thì hiện tối đa 3 emoji gần khớp nhất; đã gõ từ 2 chữ thì Enter chèn mã; gửi đi thì người khác thấy ảnh
+  // emoji: gõ "::" thì mở bảng emoji; gõ tiếp "bea" thì bảng chỉ còn emoji khớp, emoji đầu đang chọn; Enter chèn mã "::beauty::" và đóng
+  // bảng; gửi đi thì người khác thấy ảnh
   const input = a.page.locator('#chat-input');
-  const options = a.page.locator('#chat-emoji-suggest [role="option"]');
+  const picker = a.page.locator('#chat-emoji-picker');
+  const activeCell = picker.locator('.emoji-cell.active');
   await input.click();
-  await input.pressSequentially('đẹp :bea');
-  await expect(options.first()).toContainText(':beauty:');
-  expect(await options.count()).toBeLessThanOrEqual(3);
+  await input.pressSequentially('đẹp ::');
+  await expect(picker).toBeVisible();
+  await expect(picker.locator('.emoji-picker-title', { hasText: 'Emoji voz' })).toBeVisible();
+  await input.pressSequentially('bea');
+  await expect(picker.locator('.emoji-picker-title')).toHaveText(['Emoji khớp “bea”']);
+  await expect(activeCell).toHaveAttribute('aria-label', '::beauty::');
+  await expect(picker.locator('.emoji-picker-foot')).toContainText('::beauty::');
   await input.press('Enter');
-  await expect(input).toHaveValue('đẹp :beauty: ');
-  await expect(options).toHaveCount(0);
+  await expect(input).toHaveValue('đẹp ::beauty:: ');
+  await expect(picker).toHaveCount(0);
   await input.press('Enter');
-  await expect(b.page.locator('.chat-msg img[alt=":beauty:"]')).toBeVisible();
-  // Tab cũng chèn; mới gõ 1 chữ (":p", hay gặp như ":v", ":D") thì Enter vẫn gửi tin như bình thường
-  await input.pressSequentially(':bos');
+  await expect(b.page.locator('.chat-msg img[alt="::beauty::"]')).toBeVisible();
+  // phím mũi tên đổi emoji đang chọn (→ ô kế bên, ↓ hàng dưới), Tab chèn emoji đang chọn
+  await input.pressSequentially('::');
+  await expect(picker.locator('.emoji-picker-title', { hasText: 'Dùng gần đây' })).toBeVisible();
+  await expect(activeCell).toHaveId('chat-emoji-cell-0');
+  await input.press('ArrowRight');
+  await input.press('ArrowRight');
+  await expect(activeCell).toHaveId('chat-emoji-cell-2');
+  const before = (await activeCell.boundingBox())!;
+  await input.press('ArrowDown');
+  await expect(activeCell).not.toHaveId('chat-emoji-cell-2');
+  const after = (await activeCell.boundingBox())!;
+  expect(after.y).toBeGreaterThan(before.y);
+  expect(Math.abs(after.x - before.x)).toBeLessThan(before.width / 2); // cùng cột
+  const chosen = (await activeCell.getAttribute('aria-label'))!;
+  expect(chosen).toMatch(/^::[a-z0-9_]+::$/);
   await input.press('Tab');
-  await expect(input).toHaveValue(':boss: ');
+  await expect(input).toHaveValue(`${chosen} `);
+  await expect(picker).toHaveCount(0);
+  // Esc đóng bảng, giữ nguyên chữ; bấm nút mặt cười khi bảng đang mở do gõ "::" thì cũng đóng bảng
   await input.fill('');
-  await input.pressSequentially(':p');
-  await expect(options.first()).toBeVisible();
+  await input.pressSequentially('::bo');
+  await expect(picker).toBeVisible();
+  await input.press('Escape');
+  await expect(picker).toHaveCount(0);
+  await expect(input).toHaveValue('::bo');
+  await input.press('Backspace');
+  await expect(picker).toHaveCount(0); // sửa chữ sau cùng một "::" thì bảng vẫn đóng
+  await input.fill('');
+  await input.pressSequentially('::');
+  await expect(picker).toBeVisible();
+  await a.page.getByRole('button', { name: 'Đóng bảng emoji' }).click();
+  await expect(picker).toHaveCount(0);
+  await input.click();
+  await expect(picker).toHaveCount(0);
+  // không có emoji nào khớp thì bảng ẩn (bảng đã mở bằng nút mặt cười thì về lại toàn bộ emoji, Esc vẫn đóng được); một dấu ":"
+  // (":p", ":beauty:" kiểu cũ) không mở bảng và gửi đi vẫn là chữ
+  await input.fill('');
+  await input.pressSequentially('::zzz');
+  await expect(picker).toHaveCount(0);
+  await input.fill('');
+  await a.page.getByRole('button', { name: 'Chọn emoji' }).click();
+  await input.click();
+  await expect(picker).toHaveCount(0); // bấm ra ngoài bảng (vào ô nhập) thì bảng mở bằng nút đóng
+  await a.page.getByRole('button', { name: 'Chọn emoji' }).click();
+  await input.focus();
+  await input.pressSequentially('::bo');
+  await expect(picker.locator('.emoji-picker-title')).toHaveText(['Emoji khớp “bo”']);
+  await input.pressSequentially('zz');
+  await expect(picker.locator('.emoji-picker-title', { hasText: 'Emoji voz' })).toBeVisible();
+  await expect(activeCell).toHaveCount(0);
+  await input.press('Escape');
+  await expect(picker).toHaveCount(0);
+  await input.fill('');
+  await input.fill('');
+  await input.pressSequentially(':p :beauty: ::boss::');
+  await expect(picker).toHaveCount(0);
   await input.press('Enter');
   await expect(input).toHaveValue('');
-  await expect(b.page.locator('.chat-text').filter({ hasText: /^:p$/ })).toBeVisible();
+  const mixed = b.page.locator('.chat-text').filter({ hasText: /^:p :beauty:\s*$/ });
+  await expect(mixed.locator('img[alt="::boss::"]')).toBeVisible();
+  await expect(mixed.locator('img')).toHaveCount(1);
 
   // điện thoại: bảng chọn emoji; chạm một emoji thì chèn mã, bảng vẫn mở và có hàng "Dùng gần đây"; tin chỉ có emoji thì không có nền
   await b.page.getByRole('button', { name: 'Chọn emoji' }).click();
-  await b.page.getByRole('button', { name: ':boss:', exact: true }).click();
-  await expect(b.page.locator('#chat-input')).toHaveValue(':boss: ');
+  await b.page.getByRole('button', { name: '::boss::', exact: true }).click();
+  await expect(b.page.locator('#chat-input')).toHaveValue('::boss:: ');
   await expect(b.page.locator('#chat-emoji-picker')).toBeVisible();
   await expect(b.page.locator('.emoji-picker-title', { hasText: 'Dùng gần đây' })).toBeVisible();
   await b.page.getByRole('button', { name: 'Gửi', exact: true }).click();
-  await expect(a.page.locator('.chat-text.emoji-only img[alt=":boss:"]')).toBeVisible();
-  // điện thoại: chạm vào một gợi ý để chèn (trên điện thoại không có Tab, và Enter khi mới gõ 1 chữ là gửi tin)
+  await expect(a.page.locator('.chat-text.emoji-only img[alt="::boss::"]')).toBeVisible();
+  // điện thoại: gõ "::bea" thì bảng chỉ còn emoji khớp; chạm một emoji để chèn, bảng đóng
   const bInput = b.page.locator('#chat-input');
+  const bPicker = b.page.locator('#chat-emoji-picker');
   await bInput.tap();
-  await bInput.pressSequentially(':bea');
-  await b.page.locator('#chat-emoji-suggest [role="option"]').first().tap();
-  await expect(bInput).toHaveValue(':beauty: ');
+  await bInput.pressSequentially('::bea');
+  await expect(bPicker.locator('.emoji-picker-title')).toHaveText(['Emoji khớp “bea”']);
+  await bPicker.getByRole('button', { name: '::beauty::', exact: true }).tap();
+  await expect(bInput).toHaveValue('::beauty:: ');
+  await expect(bPicker).toHaveCount(0);
   await bInput.fill('');
 
   // ảnh từ máy (laptop): nút "Gửi ảnh từ máy" mở hộp chọn file → xem trước → Gửi kèm chú thích → người khác thấy ảnh đúng kích thước

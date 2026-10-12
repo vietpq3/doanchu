@@ -41,8 +41,12 @@ export const VERSUS = {
   chatImageMaxBytes: 1_000_000,
   chatImageMaxSide: 1600,
   chatImageRate: { images: 3, windowMs: 20_000 },
-  /** Leader Board của phòng (số ván thắng trong ngày): reset lúc 00:00 giờ Việt Nam (UTC+7, không có giờ mùa hè) */
-  leaderboardUtcOffsetMs: 7 * 60 * 60_000,
+  /**
+   * Leader Board của phòng còn mãi chừng nào phòng còn người; phòng trống liên tục chừng này thì reset. Không reset ngay lúc phòng vừa
+   * trống: người chơi một mình tải lại trang, hay deploy (mọi người mất kết nối rồi nối lại sau vài giây), không làm mất bảng.
+   * 0 = reset ngay khi phòng không còn ai.
+   */
+  leaderboardEmptyGraceMs: 30_000,
   /** Số người tối đa được nhớ trên Leader Board của một phòng (quá thì bỏ người thấp nhất) */
   leaderboardMax: 100,
 } as const;

@@ -2,13 +2,13 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { VERSUS } from '@/lib/versus/config';
-import { EMOJI_BY_CODE, findEmojiQuery, insertEmoji, isEmojiOnly, normalizeQuery, parseChatText, suggestEmoji, VOZ_EMOJI } from '@/lib/versus/emoji';
+import { EMOJI_BY_CODE, emojiCode, findEmojiQuery, insertEmoji, isEmojiOnly, normalizeQuery, parseChatText, searchEmoji, VOZ_EMOJI } from '@/lib/versus/emoji';
 
 const DIR = join(__dirname, '..', 'public', 'emoji', 'voz');
 const emoji = (code: string) => EMOJI_BY_CODE.get(code)!;
 /** tin -> dạng ngắn để so: chữ giữ nguyên, emoji thành [mã chuẩn] */
 const show = (text: string) => parseChatText(text).map((s) => (s.type === 'text' ? s.text : `[${s.emoji.code}]`)).join('');
-const codes = (q: string, recent: string[] = []) => suggestEmoji(q, recent).map((s) => s.emoji.code);
+const codes = (q: string, recent: string[] = []) => searchEmoji(q, recent).map((s) => s.emoji.code);
 
 describe('bộ emoji voz (popopo của voz.vn)', () => {
   test('54 emoji, mã chuẩn là tên file, mỗi emoji có ảnh 1x và 2x trong public/emoji/voz, mọi file ở đó đều được dùng', () => {
@@ -38,7 +38,7 @@ describe('bộ emoji voz (popopo của voz.vn)', () => {
   test('không mã nào (chuẩn hay cũ) trỏ tới hai emoji khác nhau', () => {
     const owner = new Map<string, string>();
     for (const e of VOZ_EMOJI) {
-      for (const c of [`:${e.code}:`, ...e.aliases].map((c) => c.toLowerCase())) {
+      for (const c of [emojiCode(e), ...e.aliases.map((a) => a.replace(/^:([a-z0-9_]+):$/i, '::$1::'))].map((c) => c.toLowerCase())) {
         expect(owner.get(c) ?? e.code, c).toBe(e.code);
         owner.set(c, e.code);
       }
@@ -47,18 +47,28 @@ describe('bộ emoji voz (popopo của voz.vn)', () => {
 });
 
 describe('hiện emoji trong tin chat', () => {
-  test('mã chuẩn và mã cũ dạng chữ hiện thành ảnh ở bất kỳ đâu, không phân biệt hoa thường', () => {
-    expect(show('chào :beauty: nhé')).toBe('chào [beauty] nhé');
-    expect(show(':beauty::boss:')).toBe('[beauty][boss]');
-    expect(show('hay quá:Beauty:')).toBe('hay quá[beauty]');
-    expect(show(':sogood: :chaymau: :nosebleed: :brick:')).toBe('[feel_good] [nosebleed] [nosebleed] [beat_brick]');
+  test('mã là "::tên::"', () => {
+    expect(emojiCode(emoji('beauty'))).toBe('::beauty::');
   });
 
-  test('mã không có thì giữ nguyên chữ; dấu ":" đóng của mã lạ vẫn mở được mã kế tiếp', () => {
-    expect(show(':foo: và 10:30 và a:b')).toBe(':foo: và 10:30 và a:b');
-    expect(show(':hug: :lmao: :sos:')).toBe(':hug: :lmao: :sos:'); // có ở bộ Off cũ nhưng không có ở voz.vn
-    expect(show(':abc:beauty:')).toBe(':abc[beauty]');
-    expect(show(':beauty')).toBe(':beauty');
+  test('mã chuẩn và mã cũ dạng chữ (gõ "::sogood::") hiện thành ảnh ở bất kỳ đâu, không phân biệt hoa thường', () => {
+    expect(show('chào ::beauty:: nhé')).toBe('chào [beauty] nhé');
+    expect(show('::beauty::::boss::')).toBe('[beauty][boss]');
+    expect(show('hay quá::Beauty::')).toBe('hay quá[beauty]');
+    expect(show('::sogood:: ::chaymau:: ::nosebleed:: ::brick::')).toBe('[feel_good] [nosebleed] [nosebleed] [beat_brick]');
+    expect(show(':::beauty:::')).toBe(':[beauty]:');
+  });
+
+  test('mã một dấu hai chấm kiểu cũ (":beauty:", đến v1.3.14) giữ nguyên chữ', () => {
+    expect(show(':beauty: :sogood: :boss:')).toBe(':beauty: :sogood: :boss:');
+    expect(show(':beauty::')).toBe(':beauty::');
+  });
+
+  test('mã không có thì giữ nguyên chữ; "::" đóng của mã lạ vẫn mở được mã kế tiếp', () => {
+    expect(show('::foo:: và 10::30 và a::b')).toBe('::foo:: và 10::30 và a::b');
+    expect(show('::hug:: ::lmao:: ::sos::')).toBe('::hug:: ::lmao:: ::sos::'); // có ở bộ Off cũ nhưng không có ở voz.vn
+    expect(show('::abc::beauty::')).toBe('::abc[beauty]');
+    expect(show('::beauty')).toBe('::beauty');
   });
 
   test('mã cũ dạng ký hiệu chỉ thành ảnh khi đứng riêng (như voz ngày trước)', () => {
@@ -67,25 +77,25 @@ describe('hiện emoji trong tin chat', () => {
   });
 
   test('giữ nguyên khoảng trắng và chữ có dấu', () => {
-    expect(show('  Việt   Nam :boss:  ')).toBe('  Việt   Nam [boss]  ');
-    expect(parseChatText('a :boss: b')).toEqual([
+    expect(show('  Việt   Nam ::boss::  ')).toBe('  Việt   Nam [boss]  ');
+    expect(parseChatText('a ::boss:: b')).toEqual([
       { type: 'text', text: 'a ' },
-      { type: 'emoji', emoji: emoji('boss'), source: ':boss:' },
+      { type: 'emoji', emoji: emoji('boss'), source: '::boss::' },
       { type: 'text', text: ' b' },
     ]);
   });
 
   test('tin chỉ có emoji (1–5 cái) thì hiện không có nền', () => {
-    expect(isEmojiOnly(parseChatText(':beauty:'))).toBe(true);
-    expect(isEmojiOnly(parseChatText(' :beauty: :boss: :) '))).toBe(true);
-    expect(isEmojiOnly(parseChatText(':go: '.repeat(6)))).toBe(false);
-    expect(isEmojiOnly(parseChatText(':beauty: đẹp'))).toBe(false);
+    expect(isEmojiOnly(parseChatText('::beauty::'))).toBe(true);
+    expect(isEmojiOnly(parseChatText(' ::beauty:: ::boss:: :) '))).toBe(true);
+    expect(isEmojiOnly(parseChatText('::go:: '.repeat(6)))).toBe(false);
+    expect(isEmojiOnly(parseChatText('::beauty:: đẹp'))).toBe(false);
     expect(isEmojiOnly(parseChatText('đẹp'))).toBe(false);
   });
 });
 
-describe('gõ ":x" để gợi ý emoji', () => {
-  test('bỏ dấu tiếng Việt khi so (bộ gõ Telex biến :sexy thành :sẽy, :boss thành :bó)', () => {
+describe('gõ "::" để mở bảng emoji', () => {
+  test('bỏ dấu tiếng Việt khi so (bộ gõ Telex biến ::sexy thành ::sẽy, ::boss thành ::bó)', () => {
     expect(normalizeQuery('sẽy')).toBe('sey');
     expect(normalizeQuery('Bó')).toBe('bo');
     expect(normalizeQuery('đẹp')).toBe('dep');
@@ -93,41 +103,63 @@ describe('gõ ":x" để gợi ý emoji', () => {
     expect(normalizeQuery(')')).toBe('');
   });
 
-  test('chỉ tính đoạn bắt đầu bằng ":" ở đầu tin hoặc sau dấu cách, ngay trước con trỏ, chưa đóng', () => {
-    expect(findEmojiQuery(':b', 2)).toEqual({ start: 0, end: 2, query: 'b' });
-    expect(findEmojiQuery('chào :bea', 9)).toEqual({ start: 5, end: 9, query: 'bea' });
-    expect(findEmojiQuery('chào :bea nhé', 9)).toEqual({ start: 5, end: 9, query: 'bea' }); // con trỏ ở giữa tin
+  test('mới gõ "::" (đầu tin, sau dấu cách hay dính chữ) thì mở bảng với chữ tìm rỗng; gõ tiếp thì thành chữ tìm', () => {
+    expect(findEmojiQuery('::', 2)).toEqual({ start: 0, end: 2, query: '' });
+    expect(findEmojiQuery('::b', 3)).toEqual({ start: 0, end: 3, query: 'b' });
+    expect(findEmojiQuery('chào ::bea', 10)).toEqual({ start: 5, end: 10, query: 'bea' });
+    expect(findEmojiQuery('chào::bea', 9)).toEqual({ start: 4, end: 9, query: 'bea' });
+    expect(findEmojiQuery('chào ::bea nhé', 10)).toEqual({ start: 5, end: 10, query: 'bea' }); // con trỏ ở giữa tin
+    expect(findEmojiQuery('::Bó', 4)).toEqual({ start: 0, end: 4, query: 'bo' }); // Telex
+  });
+
+  test('một dấu ":" (":bea", ":v", ":)", "10:30") không mở bảng', () => {
     expect(findEmojiQuery(':', 1)).toBeNull();
+    expect(findEmojiQuery(':bea', 4)).toBeNull();
+    expect(findEmojiQuery(':v', 2)).toBeNull();
     expect(findEmojiQuery(':)', 2)).toBeNull();
     expect(findEmojiQuery('10:30', 5)).toBeNull();
-    expect(findEmojiQuery('haha:be', 7)).toBeNull();
-    expect(findEmojiQuery(':beauty:', 8)).toBeNull();
-    expect(findEmojiQuery(':bea ', 5)).toBeNull();
+    expect(findEmojiQuery(':::', 3)).toBeNull();
   });
 
-  test('tối đa 3 emoji, gần khớp nhất trước: trùng > bắt đầu bằng > một chữ bắt đầu bằng > chứa > có đủ chữ theo thứ tự', () => {
+  test('"::" đóng một mã thì bảng đóng; "::" ngay sau mã đã đóng (dù mã lạ) lại mở mã mới, như parseChatText', () => {
+    expect(findEmojiQuery('::beauty::', 10)).toBeNull();
+    expect(findEmojiQuery('::abc::', 7)).toBeNull();
+    expect(findEmojiQuery('::abc::bea', 10)).toBeNull(); // parseChatText: "::abc::bea" không có mã nào
+    expect(findEmojiQuery('::beauty::::bo', 14)).toEqual({ start: 10, end: 14, query: 'bo' });
+    expect(findEmojiQuery('::::bo', 6)).toEqual({ start: 2, end: 6, query: 'bo' });
+  });
+
+  test('không mở bảng: có dấu ":" lẻ hay ký hiệu sau "::", đã gõ dấu cách, con trỏ nằm giữa "::"', () => {
+    expect(findEmojiQuery('::be:a', 6)).toBeNull();
+    expect(findEmojiQuery('::)', 3)).toBeNull();
+    expect(findEmojiQuery('::bea ', 6)).toBeNull();
+    expect(findEmojiQuery('a::b', 2)).toBeNull();
+  });
+
+  test('mọi emoji khớp, gần khớp nhất trước: trùng > bắt đầu bằng > một chữ bắt đầu bằng > chứa > có đủ chữ theo thứ tự', () => {
     expect(codes('beauty')[0]).toBe('beauty');
     expect(codes('bea')[0]).toBe('beauty');
-    expect(codes('b')).toHaveLength(3);
-    expect(codes('brick')[0]).toBe('beat_brick'); // mã cũ :brick:
+    expect(codes('b').length).toBeGreaterThan(3); // không còn giới hạn 3 gợi ý
+    expect(codes('brick')[0]).toBe('beat_brick'); // mã cũ ::brick::
     expect(codes('smil')).toEqual(['smile', 'big_smile']); // "smile" bắt đầu bằng; "big_smile" có chữ "smile"
-    expect(codes('sey')).toContain('sexy_girl'); // gõ :sexy bằng Telex
+    expect(codes('sey')).toContain('sexy_girl'); // gõ ::sexy bằng Telex
     expect(codes('zzz')).toEqual([]);
+    expect(codes('')).toEqual([]);
   });
 
-  test('gợi ý theo mã cũ thì kèm mã cũ để người chơi biết vì sao khớp', () => {
-    expect(suggestEmoji('chaym')[0]).toEqual({ emoji: emoji('nosebleed'), alias: ':chaymau:' });
-    expect(suggestEmoji('beauty')[0]).toEqual({ emoji: emoji('beauty'), alias: null });
+  test('khớp theo mã cũ thì kèm mã cũ (gõ theo kiểu "::chữ::") để người chơi biết vì sao khớp', () => {
+    expect(searchEmoji('chaym')[0]).toEqual({ emoji: emoji('nosebleed'), alias: '::chaymau::' });
+    expect(searchEmoji('beauty')[0]).toEqual({ emoji: emoji('beauty'), alias: null });
   });
 
-  test('mã cũ dạng ký hiệu chỉ tính khi gõ trùng hẳn: ":d" ra Big Smile đầu tiên', () => {
+  test('mã cũ dạng ký hiệu chỉ tính khi gõ trùng hẳn: "::d" ra Big Smile đầu tiên', () => {
     expect(codes('d')[0]).toBe('big_smile');
-    expect(suggestEmoji('d')[0].alias).toBe(':D');
+    expect(searchEmoji('d')[0].alias).toBe(':D');
     expect(codes('s')[0]).toBe('confuse'); // :-s
   });
 
   test('cùng mức khớp thì emoji dùng gần đây đứng trước', () => {
-    expect(codes('b')).not.toContain('beat_brick');
+    expect(codes('b')[0]).not.toBe('beat_brick');
     expect(codes('b', ['beat_brick'])[0]).toBe('beat_brick');
     expect(codes('bea', ['beat_brick'])[0]).toBe('beat_brick'); // cùng "bắt đầu bằng bea" với beauty
     expect(codes('smile', ['big_smile'])[0]).toBe('smile'); // nhưng khớp gần hơn (trùng hẳn) vẫn thắng
@@ -135,20 +167,29 @@ describe('gõ ":x" để gợi ý emoji', () => {
 });
 
 describe('chèn mã emoji vào ô nhập', () => {
-  test('thay đoạn ":x" đang gõ, thêm dấu cách sau để gõ tiếp', () => {
-    expect(insertEmoji('chào :bea', 5, 9, emoji('beauty'))).toEqual({ value: 'chào :beauty: ', caret: 14 });
-    expect(insertEmoji(':bea nhé', 0, 4, emoji('beauty'))).toEqual({ value: ':beauty: nhé', caret: 9 });
+  test('thay đoạn "::x" đang gõ, thêm dấu cách sau để gõ tiếp (và trước, nếu dính chữ)', () => {
+    expect(insertEmoji('chào ::bea', 5, 10, emoji('beauty'))).toEqual({ value: 'chào ::beauty:: ', caret: 16 });
+    expect(insertEmoji('::bea nhé', 0, 5, emoji('beauty'))).toEqual({ value: '::beauty:: nhé', caret: 11 });
+    expect(insertEmoji('::', 0, 2, emoji('boss'))).toEqual({ value: '::boss:: ', caret: 9 });
+    expect(insertEmoji('chào::bea', 4, 9, emoji('beauty'))).toEqual({ value: 'chào ::beauty:: ', caret: 16 });
   });
 
   test('chèn ở chỗ con trỏ (bảng emoji): thêm dấu cách trước nếu dính chữ', () => {
-    expect(insertEmoji('hay', 3, 3, emoji('boss'))).toEqual({ value: 'hay :boss: ', caret: 11 });
-    expect(insertEmoji('', 0, 0, emoji('boss'))).toEqual({ value: ':boss: ', caret: 7 });
-    expect(insertEmoji('ab', 1, 1, emoji('go'))).toEqual({ value: 'a :go: b', caret: 7 });
+    expect(insertEmoji('hay', 3, 3, emoji('boss'))).toEqual({ value: 'hay ::boss:: ', caret: 13 });
+    expect(insertEmoji('', 0, 0, emoji('boss'))).toEqual({ value: '::boss:: ', caret: 9 });
+    expect(insertEmoji('ab', 1, 1, emoji('go'))).toEqual({ value: 'a ::go:: b', caret: 9 });
+  });
+
+  test('mã vừa chèn hiện thành ảnh và không mở lại bảng', () => {
+    const { value, caret } = insertEmoji('chào ::bea', 5, 10, emoji('beauty'))!;
+    expect(show(value)).toBe('chào [beauty] ');
+    expect(findEmojiQuery(value, caret)).toBeNull();
+    expect(findEmojiQuery(value, caret - 1)).toBeNull();
   });
 
   test(`không chèn nếu tin sẽ dài quá ${VERSUS.chatMax} ký tự`, () => {
-    const fits = VERSUS.chatMax - ' :go: '.length;
+    const fits = VERSUS.chatMax - ' ::go:: '.length;
     expect(insertEmoji('x'.repeat(fits + 1), fits + 1, fits + 1, emoji('go'))).toBeNull();
-    expect(insertEmoji('x'.repeat(fits), fits, fits, emoji('go'))).toEqual({ value: 'x'.repeat(fits) + ' :go: ', caret: VERSUS.chatMax });
+    expect(insertEmoji('x'.repeat(fits), fits, fits, emoji('go'))).toEqual({ value: 'x'.repeat(fits) + ' ::go:: ', caret: VERSUS.chatMax });
   });
 });
