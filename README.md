@@ -315,7 +315,7 @@ Lỗi trả về dạng `{ error, message }`:
 
 ### API cho ứng dụng di động
 
-Ứng dụng di động (repo riêng `doanchu-mobile`, Expo, chỉ có Chơi đơn) gọi chính các API ở trên. App không dùng cookie: tự giữ id ván (và bản sao trạng thái ván) trong máy, truyền id trong đường dẫn, và gửi độ khó trong body. Các phần thêm cho app (từ v1.3.17; trang web không dùng):
+Ứng dụng di động (repo riêng `doanchu-mobile`, Expo, chỉ có Chơi đơn) gọi chính các API ở trên. App không dùng cookie: tự giữ id ván (và bản sao trạng thái ván) trong máy, truyền id trong đường dẫn, và gửi độ khó trong body. Các phần thêm cho app (từ v2.0.0; trang web không dùng):
 
 | API | Ý nghĩa |
 |---|---|
@@ -340,7 +340,7 @@ npm version 1.4.0 --no-git-tag-version   # hoặc chỉ định thẳng một s�
 
 Các lệnh sửa `package.json` + `package-lock.json`; số được nhúng vào code lúc build nên phải tăng **trước** `npm run deploy`. Lịch sử bên dưới ghi các thay đổi đáng chú ý; bản vá nhỏ có thể gộp thành một dòng.
 
-- **v1.3.17**: **API cho ứng dụng di động** (xem [API cho ứng dụng di động](#api-cho-ứng-dụng-di-động)): `POST /api/games` nhận độ khó trong body và `anyDifficulty` (mở từ khóa số N bất kể độ khó, trả JSON); thêm `GET /api/games/:id` đọc trạng thái ván. Trang web không đổi.
+- **v2.0.0**: **API cho ứng dụng di động** (app Đoán Chữ cho iOS/Android, repo `doanchu-mobile`; xem [API cho ứng dụng di động](#api-cho-ứng-dụng-di-động)): `POST /api/games` nhận độ khó trong body và `anyDifficulty` (mở từ khóa số N bất kể độ khó, trả JSON); thêm `GET /api/games/:id` đọc trạng thái ván. Trang web không đổi.
 - **v1.3.16**: **Bảng xếp hạng còn mãi chừng nào phòng còn người**: bỏ reset lúc 00:00; phòng không còn ai (liên tục 30 giây) thì reset, nên người chơi một mình tải lại trang hay deploy không làm mất bảng. Người đã rời mà vào lại (phòng vẫn còn người) thì có lại số ván.
 - **v1.3.15**: **emoji trong chat gõ bằng `::`**: mã emoji đổi từ `:tên:` sang `::tên::` (mã một dấu hai chấm kiểu cũ giờ giữ nguyên chữ; `:)`, `:D`… không đổi); gõ `::` thì mở bảng emoji thay cho 3 gợi ý khi gõ `:x`, gõ tiếp chữ thì bảng chỉ còn emoji khớp; phím mũi tên để chọn, Enter/Tab để chèn, Esc để đóng.
 - **v1.3.14**: **ảnh trong chat**: nút gửi ảnh từ máy và nút dán từ clipboard (ảnh, kể cả ảnh từ `Chụp ảnh màn hình`, hoặc chữ); Ctrl+V ảnh vào ô nhập; xem trước trước khi gửi, kèm chú thích; ảnh lớn được thu nhỏ trước khi gửi; ảnh lưu trong Durable Object của phòng và bị xóa cùng lịch sử chat.
