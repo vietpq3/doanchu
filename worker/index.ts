@@ -1,6 +1,7 @@
 import openNext from '../.open-next/worker.js';
 import { isChatImageId } from '../src/lib/versus/chatImage';
 import { isRoomId, VERSUS } from '../src/lib/versus/config';
+import { isAllowedOrigin } from '../src/lib/versus/origin';
 import type { RoomSummary } from '../src/lib/versus/room';
 import type { RoomEnv } from './room-do';
 
@@ -23,11 +24,8 @@ async function roomList(env: RoomEnv): Promise<Response> {
   return Response.json({ rooms: roomsCache.rooms }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
-/** Request từ chính trang của mình (trang khác không được mở kết nối hay gửi ảnh vào phòng). */
-const sameOrigin = (request: Request, url: URL) => {
-  const origin = request.headers.get('Origin');
-  return !origin || new URL(origin).host === url.host;
-};
+/** Request từ chính trang của mình hoặc từ ứng dụng di động (trang khác không được mở kết nối hay gửi ảnh vào phòng). */
+const sameOrigin = (request: Request, url: URL) => isAllowedOrigin(request.headers.get('Origin'), url.host);
 
 /**
  * Ảnh trong chat của phòng (lưu trong Durable Object của phòng). Trả đúng loại ảnh đã nhận dạng lúc gửi; `nosniff` + CSP `sandbox`
@@ -71,8 +69,8 @@ const worker = {
       const roomId = Number(image[1]);
       if (!isRoomId(roomId)) return new Response('Room không tồn tại', { status: 404 });
       if (request.method === 'POST' && !image[2]) {
-        // gửi ảnh: bắt buộc có Origin của chính trang (fetch từ trang luôn gửi Origin với POST)
-        if (!request.headers.get('Origin') || !sameOrigin(request, url)) return new Response('Forbidden', { status: 403 });
+        // gửi ảnh: từ chính trang (fetch từ trang luôn gửi Origin với POST) hoặc từ ứng dụng di động (không có Origin)
+        if (!sameOrigin(request, url)) return new Response('Forbidden', { status: 403 });
         return stubOf(env, roomId).fetch(request);
       }
       if (request.method === 'GET' && image[2]) return isChatImageId(image[2]) ? chatImage(env, roomId, image[2]) : new Response('Not found', { status: 404 });
